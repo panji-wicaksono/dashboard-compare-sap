@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAP vs Prodsys — GR Compare</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:#f0f2f5;color:#333;font-size:14px;min-height:100vh}
+
+/* ── Navbar ── */
+nav{background:#1565C0;color:#fff;display:flex;align-items:stretch;height:52px;box-shadow:0 2px 8px rgba(0,0,0,.25);position:sticky;top:0;z-index:100}
+.nav-brand{display:flex;flex-direction:column;justify-content:center;padding:0 20px;border-right:1px solid rgba(255,255,255,.15)}
+.nav-brand span{font-size:15px;font-weight:700;line-height:1.2}
+.nav-brand small{font-size:11px;opacity:.7}
+.nav-tabs{display:flex;align-items:stretch;gap:2px;padding:0 8px}
+.nav-tab{display:flex;align-items:center;gap:7px;padding:0 18px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:rgba(255,255,255,.75);transition:all .2s;border-bottom:3px solid transparent;height:100%}
+.nav-tab:hover{color:#fff;background:rgba(255,255,255,.08)}
+.nav-tab.active{color:#fff;border-bottom-color:#64B5F6}
+.nav-tab .ico{font-size:16px}
+
+/* ── Layout ── */
+main{max-width:1440px;margin:0 auto;padding:20px 24px 60px}
+
+/* ── Card ── */
+.card{background:#fff;border-radius:8px;padding:20px 22px;box-shadow:0 1px 4px rgba(0,0,0,.1);margin-bottom:16px}
+.card-title{font-size:14px;font-weight:700;color:#1565C0;border-bottom:1px solid #e8e8e8;padding-bottom:10px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+
+/* ── Alert ── */
+.alert{padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;display:flex;align-items:flex-start;gap:8px}
+.alert-err{background:#FFEBEE;color:#B71C1C;border:1px solid #FFCDD2}
+.alert-ok{background:#E8F5E9;color:#1B5E20;border:1px solid #C8E6C9}
+.alert-info{background:#E3F2FD;color:#0D47A1;border:1px solid #BBDEFB}
+
+/* ── Buttons ── */
+.btn{padding:9px 20px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:#1565C0;color:#fff}.btn-primary:hover{background:#0D47A1}
+.btn-primary:disabled{background:#90CAF9;cursor:not-allowed}
+.btn-success{background:#2E7D32;color:#fff}.btn-success:hover{background:#1B5E20}
+.btn-outline{background:#fff;color:#1565C0;border:1px solid #1565C0}.btn-outline:hover{background:#E3F2FD}
+.btn-sm{padding:6px 14px;font-size:12px}
+.btn-danger-sm{background:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;padding:5px 10px;font-size:12px;border-radius:5px;cursor:pointer}.btn-danger-sm:hover{background:#FFCDD2}
+
+/* ── Forms ── */
+select,input[type=text],input[type=date]{padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;transition:border .2s;background:#fff}
+select:focus,input:focus{border-color:#1565C0}
+.lbl{display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+
+/* ── PAGE: COMPARE ── */
+.compare-toolbar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.compare-toolbar .field{display:flex;flex-direction:column;gap:4px}
+.compare-toolbar select{min-width:180px}
+
+/* Summary cards */
+.sum-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+.sum-card{background:#fff;border-radius:8px;padding:14px 10px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.1);border-top:4px solid #ccc;cursor:pointer;transition:box-shadow .15s}
+.sum-card:hover{box-shadow:0 3px 10px rgba(0,0,0,.15)}
+.sum-card.active-filter{box-shadow:0 0 0 2px #1565C0}
+.sum-card .cnt{font-size:28px;font-weight:800;margin-bottom:2px}
+.sum-card .slbl{font-size:11px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.c-all{border-color:#607D8B}
+.c-match{border-color:#43A047}.c-match .cnt{color:#2E7D32}
+.c-sap{border-color:#E53935}.c-sap .cnt{color:#C62828}
+.c-prd{border-color:#FB8C00}.c-prd .cnt{color:#E65100}
+.c-only{border-color:#9E9E9E}
+
+/* Legend */
+.legend{background:#fff;border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:12px}
+.legend strong{font-size:13px}
+
+/* Badges */
+.badge{padding:2px 8px;border-radius:11px;font-size:11px;font-weight:700;white-space:nowrap;display:inline-block}
+.s-match{background:#C8E6C9;color:#1B5E20}
+.s-sap{background:#FFCDD2;color:#B71C1C}
+.s-prd{background:#FFE0B2;color:#E65100}
+.s-onsap{background:#F8BBD0;color:#880E4F}
+.s-onprd{background:#FFF9C4;color:#795548}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.filter-bar select{width:auto;min-width:170px}
+.filter-bar input{flex:1;min-width:180px;max-width:320px}
+.row-info{font-size:12px;color:#666;margin-bottom:8px}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:#1565C0;color:#fff;padding:9px 12px;text-align:left;white-space:nowrap;font-weight:600;position:sticky;top:0}
+thead th.num{text-align:right}
+tbody td{padding:7px 12px;border-bottom:1px solid #f0f0f0;white-space:nowrap}
+tbody tr:hover{filter:brightness(.97)}
+.num{text-align:right;font-family:Consolas,monospace}
+.val-neg{color:#C62828;font-weight:600}
+.val-pos{color:#2E7D32;font-weight:600}
+.r-match{background:#F1F8E9}.r-sap{background:#FFEBEE}.r-prd{background:#FFF3E0}
+.r-onsap{background:#FCE4EC}.r-onprd{background:#FFFDE7}
+.r-total{background:#ECEFF1;font-weight:700;border-top:2px solid #90A4AE;border-bottom:2px solid #90A4AE}
+.r-total.has-diff{background:#FFCCBC}
+.r-total td{font-size:12px;padding:5px 12px}
+.r-total .total-lbl{font-weight:700;color:#37474F}
+
+/* Pagination */
+.pager{display:flex;align-items:center;gap:6px;padding:12px 0;flex-wrap:wrap}
+.pager button{padding:5px 11px;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer;font-size:12px}
+.pager button.cur{background:#1565C0;color:#fff;border-color:#1565C0}
+.pager button:disabled{opacity:.4;cursor:not-allowed}
+.pager .pi{font-size:12px;color:#666;margin-left:4px}
+
+/* Empty state */
+.empty{text-align:center;padding:60px 20px;color:#999}
+.empty .eico{font-size:48px;margin-bottom:12px}
+.empty p{font-size:14px}
+
+/* ── PAGE: UPLOAD ── */
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.upload-card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);overflow:hidden}
+.upload-card-header{padding:14px 18px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px}
+.upload-card-header .ico{font-size:22px}
+.upload-card-header h3{font-size:14px;font-weight:700;color:#1565C0}
+.upload-card-header p{font-size:12px;color:#666;margin-top:2px}
+.upload-card-body{padding:16px 18px}
+
+/* Drop zone */
+.drop{border:2px dashed #90CAF9;border-radius:8px;padding:22px 14px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.drop:hover,.drop.over{border-color:#1565C0;background:#E3F2FD}
+.drop.ok{border-color:#43A047;background:#F1F8E9}
+.drop input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop .dico{font-size:28px;margin-bottom:6px}
+.drop .dtxt{font-size:13px;font-weight:600;color:#555}
+.drop .dsub{font-size:11px;color:#888;margin-top:3px}
+.drop .fname{font-size:12px;color:#2E7D32;font-weight:600;margin-top:6px}
+
+/* Upload status chip */
+.status-chip{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;font-size:12px;margin-top:10px}
+.chip-ok{background:#E8F5E9;border:1px solid #C8E6C9;color:#2E7D32}
+.chip-empty{background:#F5F5F5;border:1px solid #E0E0E0;color:#9E9E9E}
+.chip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.chip-ok .chip-dot{background:#4CAF50}
+.chip-empty .chip-dot{background:#BDBDBD}
+
+/* Loading spinner */
+.spin-wrap{display:flex;align-items:center;gap:10px;padding:16px;color:#1565C0;font-size:14px}
+.spin{width:22px;height:22px;border:3px solid #BBDEFB;border-top-color:#1565C0;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.hidden{display:none!important}
+
+@media(max-width:800px){
+  .sum-grid{grid-template-columns:repeat(3,1fr)}
+  .upload-grid{grid-template-columns:1fr}
+  nav .nav-brand small{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ Navbar ══ -->
+<nav>
+  <div class="nav-brand">
+    <span>GR Compare Dashboard</span>
+    <small>SAP vs Prodsys &mdash; MT 531 &amp; 888</small>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="tab-compare" onclick="switchTab('compare')">
+      <span class="ico">📊</span> Perbandingan
+    </button>
+    <button class="nav-tab" id="tab-upload" onclick="switchTab('upload')">
+      <span class="ico">📂</span> Upload Data
+    </button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ════════════════════════════════════════════
+     PAGE: COMPARE
+════════════════════════════════════════════ -->
+<div id="page-compare">
+
+  <!-- Error / Info bar -->
+  <div id="cmp-err" class="alert alert-err hidden"></div>
+  <div id="cmp-info" class="alert alert-info hidden"></div>
+
+  <!-- Toolbar -->
+  <div class="card" style="padding:16px 22px">
+    <div class="compare-toolbar">
+      <div class="field">
+        <span class="lbl">Tanggal Prod. Order</span>
+        <select id="date-sel" onchange="loadCompare()">
+          <option value="">-- Pilih tanggal --</option>
+        </select>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="refreshDates()" title="Refresh daftar tanggal">&#8635; Refresh</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-success btn-sm" id="btn-export" onclick="doExport()" disabled>&#11015; Export Excel</button>
+    </div>
+  </div>
+
+  <!-- Summary cards (hidden until data loaded) -->
+  <div class="sum-grid" id="sum-grid" style="display:none">
+    <div class="sum-card c-all" onclick="filterStatus('')" id="sc-all">
+      <div class="cnt" id="s-total">0</div><div class="slbl">Total Baris</div>
+    </div>
+    <div class="sum-card c-match" onclick="filterStatus('MATCH')" id="sc-match">
+      <div class="cnt" id="s-match">0</div><div class="slbl">Match</div>
+    </div>
+    <div class="sum-card c-sap" onclick="filterStatus('SAP LEBIH BESAR')" id="sc-sap">
+      <div class="cnt" id="s-sap">0</div><div class="slbl">SAP Lebih Besar</div>
+    </div>
+    <div class="sum-card c-prd" onclick="filterStatus('PRODSYS LEBIH BESAR')" id="sc-prd">
+      <div class="cnt" id="s-prd">0</div><div class="slbl">Prodsys Lebih Besar</div>
+    </div>
+    <div class="sum-card c-only" onclick="filterStatus('__ONLY__')" id="sc-only">
+      <div class="cnt" id="s-only">0</div><div class="slbl">Hanya Satu Sisi</div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend" id="legend" style="display:none">
+    <strong>Keterangan:</strong>
+    <span class="badge s-match">MATCH</span><span>Qty cocok</span>
+    <span class="badge s-sap">SAP LEBIH BESAR</span><span>Qty SAP &gt; Qty Prodsys</span>
+    <span class="badge s-prd">PRODSYS LEBIH BESAR</span><span>Qty Prodsys &gt; Qty SAP</span>
+    <span class="badge s-onsap">HANYA DI SAP</span><span>Tidak ada di Prodsys</span>
+    <span class="badge s-onprd">HANYA DI PRODSYS</span><span>Tidak ada di SAP</span>
+  </div>
+
+  <!-- Loading -->
+  <div id="cmp-loading" class="hidden">
+    <div class="card"><div class="spin-wrap"><div class="spin"></div>Memuat data perbandingan...</div></div>
+  </div>
+
+  <!-- Results table -->
+  <div id="cmp-results" class="hidden">
+    <div class="card">
+      <div class="filter-bar">
+        <select id="f-status" onchange="applyFilter()">
+          <option value="">Semua Status</option>
+          <option value="SAP LEBIH BESAR">SAP Lebih Besar</option>
+          <option value="PRODSYS LEBIH BESAR">Prodsys Lebih Besar</option>
+          <option value="HANYA DI SAP">Hanya di SAP</option>
+          <option value="HANYA DI PRODSYS">Hanya di Prodsys</option>
+          <option value="MATCH">Match</option>
+        </select>
+        <input type="text" id="f-search" placeholder="Cari order / material / deskripsi..." oninput="applyFilter()">
+      </div>
+      <div class="row-info" id="row-info"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Production Order</th>
+              <th>Material</th>
+              <th>Description</th>
+              <th>Order Type</th>
+              <th>Plant</th>
+              <th>UoM</th>
+              <th class="num">Qty SAP</th>
+              <th class="num">Qty Prodsys</th>
+              <th class="num">Count</th>
+              <th class="num">Selisih</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="pager"></div>
+    </div>
+  </div>
+
+  <!-- Empty state (no date selected yet) -->
+  <div id="cmp-empty" class="card">
+    <div class="empty">
+      <div class="eico">📅</div>
+      <p><strong>Pilih tanggal produksi</strong> untuk memuat data perbandingan SAP vs Prodsys.</p>
+      <p style="margin-top:6px;font-size:12px;color:#aaa">Tanggal diambil dari field GSTRP (tanggal mulai produksi) pada data Prodsys yang sudah diupload.</p>
+    </div>
+  </div>
+
+</div><!-- /page-compare -->
+
+<!-- ════════════════════════════════════════════
+     PAGE: UPLOAD
+════════════════════════════════════════════ -->
+<div id="page-upload" class="hidden">
+
+  <div class="alert alert-info">
+    Upload file export SAP sesuai tabel masing-masing. Data lama akan digantikan setiap kali upload baru.
+    Format yang diterima: <strong>.xlsx, .xls, .csv</strong>. File harus berformat export SAP standar (baris pertama deskripsi kolom akan dilewati otomatis).
+  </div>
+
+  <div id="up-err" class="alert alert-err hidden"></div>
+  <div id="up-ok"  class="alert alert-ok  hidden"></div>
+
+  <div class="upload-grid">
+
+    <!-- AUFM -->
+    <div class="upload-card" id="card-aufm">
+      <div class="upload-card-header">
+        <span class="ico">📦</span>
+        <div>
+          <h3>AUFM — Goods Receipt</h3>
+          <p>Movement type 531/532/888/889 · kolom wajib: MANDT, MBLNR, MJAHR, ZEILE, AUFNR, MATNR, BWART, MENGE, MEINS, BLDAT, WERKS</p>
+        </div>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop" id="drop-aufm">
+          <input type="file" id="f-aufm" accept=".csv,.xlsx,.xls" onchange="onFileSelect('aufm',this)">
+          <div class="dico">📄</div>
+          <div class="dtxt">Klik atau drag file AUFM</div>
+          <div class="dsub">.xlsx / .xls / .csv</div>
+          <div class="fname hidden" id="fn-aufm"></div>
+        </div>
+        <div class="status-chip chip-empty" id="chip-aufm">
+          <div class="chip-dot"></div><span id="chip-aufm-txt">Belum ada data</span>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-aufm" disabled onclick="doUpload('aufm')">Upload AUFM</button>
+          <div id="spin-aufm" class="hidden"><div class="spin" style="width:18px;height:18px"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAUFV -->
+    <div class="upload-card" id="card-caufv">
+      <div class="upload-card-header">
+        <span class="ico">📋</span>
+        <div>
+          <h3>CAUFV — Order Master</h3>
+          <p>Order type &amp; tanggal mulai produksi · kolom wajib: AUFNR, AUART · opsional: GSTRP, WERKS</p>
+        </div>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop" id="drop-caufv">
+          <input type="file" id="f-caufv" accept=".csv,.xlsx,.xls" onchange="onFileSelect('caufv',this)">
+          <div class="dico">📄</div>
+          <div class="dtxt">Klik atau drag file CAUFV</div>
+          <div class="dsub">.xlsx / .xls / .csv</div>
+          <div class="fname hidden" id="fn-caufv"></div>
+        </div>
+        <div class="status-chip chip-empty" id="chip-caufv">
+          <div class="chip-dot"></div><span id="chip-caufv-txt">Belum ada data</span>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-caufv" disabled onclick="doUpload('caufv')">Upload CAUFV</button>
+          <div id="spin-caufv" class="hidden"><div class="spin" style="width:18px;height:18px"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAKT -->
+    <div class="upload-card" id="card-makt">
+      <div class="upload-card-header">
+        <span class="ico">🏷️</span>
+        <div>
+          <h3>MAKT — Material Description</h3>
+          <p>Deskripsi material · kolom wajib: MATNR, MAKTX</p>
+        </div>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop" id="drop-makt">
+          <input type="file" id="f-makt" accept=".csv,.xlsx,.xls" onchange="onFileSelect('makt',this)">
+          <div class="dico">📄</div>
+          <div class="dtxt">Klik atau drag file MAKT</div>
+          <div class="dsub">.xlsx / .xls / .csv</div>
+          <div class="fname hidden" id="fn-makt"></div>
+        </div>
+        <div class="status-chip chip-empty" id="chip-makt">
+          <div class="chip-dot"></div><span id="chip-makt-txt">Belum ada data</span>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-makt" disabled onclick="doUpload('makt')">Upload MAKT</button>
+          <div id="spin-makt" class="hidden"><div class="spin" style="width:18px;height:18px"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Prodsys -->
+    <div class="upload-card" id="card-prodsys">
+      <div class="upload-card-header">
+        <span class="ico">🏭</span>
+        <div>
+          <h3>ZPPCPFINT_GRAUTO — Prodsys</h3>
+          <p>Data produksi eksternal · kolom wajib: SAPID, CAUFV_AUFN, CAUFV_WERK, MSEG_MATNR, MSEG_MENGE · tanggal dari CAUFV_GSTRP (atau AFRUD_ISDD jika tidak ada)</p>
+        </div>
+      </div>
+      <div class="upload-card-body">
+        <div class="drop" id="drop-prodsys">
+          <input type="file" id="f-prodsys" accept=".csv,.xlsx,.xls" onchange="onFileSelect('prodsys',this)">
+          <div class="dico">📄</div>
+          <div class="dtxt">Klik atau drag file Prodsys</div>
+          <div class="dsub">.xlsx / .xls / .csv</div>
+          <div class="fname hidden" id="fn-prodsys"></div>
+        </div>
+        <div class="status-chip chip-empty" id="chip-prodsys">
+          <div class="chip-dot"></div><span id="chip-prodsys-txt">Belum ada data</span>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary btn-sm" id="btn-prodsys" disabled onclick="doUpload('prodsys')">Upload Prodsys</button>
+          <div id="spin-prodsys" class="hidden"><div class="spin" style="width:18px;height:18px"></div></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /upload-grid -->
+</div><!-- /page-upload -->
+
+</main>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let allData = [], filteredData = [], displayRows = [], page = 1, activeStatus = '';
+const PER = 200;
+const files = {};   // { aufm: File, aufk: File, makt: File, prodsys: File }
+
+// ── Tab navigation ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('page-compare').classList.toggle('hidden', tab !== 'compare');
+  document.getElementById('page-upload').classList.toggle('hidden', tab !== 'upload');
+  document.getElementById('tab-compare').classList.toggle('active', tab === 'compare');
+  document.getElementById('tab-upload').classList.toggle('active', tab === 'upload');
+  if (tab === 'upload') loadUploadStatus();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  refreshDates();
+  setupDrag('aufm'); setupDrag('caufv'); setupDrag('makt'); setupDrag('prodsys');
+});
+
+// ── Date list ──────────────────────────────────────────────────────────────────
+async function refreshDates() {
+  try {
+    const res = await fetch('/api/dates');
+    const d = await res.json();
+    const sel = document.getElementById('date-sel');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">-- Pilih tanggal --</option>';
+    (d.dates || []).forEach(dt => {
+      const o = document.createElement('option');
+      o.value = dt;
+      o.textContent = formatDate(dt);
+      sel.appendChild(o);
+    });
+    if (prev && d.dates && d.dates.includes(prev)) sel.value = prev;
+    if (!d.dates || !d.dates.length) showInfo('Belum ada data Prodsys. Upload file terlebih dahulu di menu Upload Data.');
+    else clearInfo();
+  } catch(e) { showErr('Gagal memuat daftar tanggal: ' + e.message); }
+}
+
+function formatDate(dt) {
+  // YYYY-MM-DD → DD MMM YYYY
+  try {
+    const d = new Date(dt + 'T00:00:00');
+    return d.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+  } catch { return dt; }
+}
+
+// ── Compare load ───────────────────────────────────────────────────────────────
+async function loadCompare() {
+  const date = document.getElementById('date-sel').value;
+  if (!date) {
+    show('cmp', 'empty'); hideSummary(); return;
+  }
+  show('cmp', 'loading');
+  clearErr(); clearInfo();
+  try {
+    const res = await fetch('/api/compare?date=' + encodeURIComponent(date));
+    const d = await res.json();
+    if (!res.ok) { showErr(d.error || 'Error memuat data'); show('cmp','empty'); return; }
+    allData = d.data;
+    updateSummary(d.summary);
+    activeStatus = '';
+    document.getElementById('f-status').value = '';
+    document.getElementById('f-search').value = '';
+    applyFilter();
+    show('cmp', 'results');
+    document.getElementById('btn-export').disabled = !allData.length;
+    showSummary();
+  } catch(e) { showErr('Gagal terhubung ke server: ' + e.message); show('cmp','empty'); }
+}
+
+// ── Summary cards ──────────────────────────────────────────────────────────────
+function updateSummary(s) {
+  document.getElementById('s-total').textContent = s.total.toLocaleString('id');
+  document.getElementById('s-match').textContent = s.match.toLocaleString('id');
+  document.getElementById('s-sap').textContent   = s.sap_lebih.toLocaleString('id');
+  document.getElementById('s-prd').textContent   = s.prodsys_lebih.toLocaleString('id');
+  document.getElementById('s-only').textContent  = (s.hanya_sap + s.hanya_prodsys).toLocaleString('id');
+}
+function showSummary() { document.getElementById('sum-grid').style.display=''; document.getElementById('legend').style.display=''; }
+function hideSummary() { document.getElementById('sum-grid').style.display='none'; document.getElementById('legend').style.display='none'; }
+
+function filterStatus(val) {
+  // Toggle: clicking same card twice → clear filter
+  if (val === activeStatus) { val = ''; }
+  activeStatus = val;
+  // Update card highlight
+  ['all','match','sap','prd','only'].forEach(k => document.getElementById('sc-'+k).classList.remove('active-filter'));
+  const map = {'':'all','MATCH':'match','SAP LEBIH BESAR':'sap','PRODSYS LEBIH BESAR':'prd','__ONLY__':'only'};
+  if (map[val]) document.getElementById('sc-'+map[val]).classList.add('active-filter');
+
+  // Apply to filter select
+  if (val === '__ONLY__') {
+    document.getElementById('f-status').value = '';
+  } else {
+    document.getElementById('f-status').value = val;
+  }
+  applyFilter();
+}
+
+// ── Filter & render ────────────────────────────────────────────────────────────
+function applyFilter() {
+  const st = document.getElementById('f-status').value;
+  const q  = document.getElementById('f-search').value.toLowerCase();
+
+  filteredData = allData.filter(row => {
+    if (st && row.status !== st) return false;
+    if (activeStatus === '__ONLY__' && row.status !== 'HANYA DI SAP' && row.status !== 'HANYA DI PRODSYS') return false;
+    if (q) {
+      const hay = [row.AUFNR,row.MATNR,row.maktx,row.auart,row.werks].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  displayRows = buildDisplayRows(filteredData);
+  page = 1; renderTable();
+}
+
+function buildDisplayRows(data) {
+  const sorted = [...data].sort((a, b) => {
+    const ao = String(a.AUFNR ?? ''), bo = String(b.AUFNR ?? '');
+    if (ao < bo) return -1; if (ao > bo) return 1;
+    const am = String(a.MATNR ?? ''), bm = String(b.MATNR ?? '');
+    if (am < bm) return -1; if (am > bm) return 1;
+    return 0;
+  });
+  const groups = new Map();
+  for (const row of sorted) {
+    const k = String(row.AUFNR ?? '');
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(row);
+  }
+  const result = [];
+  for (const [aufnr, group] of groups) {
+    result.push(...group);
+    const sap = group.reduce((s,r) => s + (Number(r.qty_sap)||0), 0);
+    const prd = group.reduce((s,r) => s + (Number(r.qty_prd)||0), 0);
+    const cnt = group.reduce((s,r) => s + (Number(r.cnt)||0), 0);
+    result.push({ _isTotal:true, AUFNR:aufnr, qty_sap:sap, qty_prd:prd, cnt,
+                  selisih:parseFloat((sap-prd).toFixed(3)) });
+  }
+  return result;
+}
+
+function fmtNum(v, isCnt) {
+  const n = Number(v);
+  if (isNaN(n)) return v || '';
+  return isCnt ? Math.round(n).toLocaleString('id')
+               : n.toLocaleString('id',{minimumFractionDigits:3,maximumFractionDigits:3});
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  const start = (page-1)*PER;
+  displayRows.slice(start, start+PER).forEach(row => {
+    const tr = document.createElement('tr');
+    if (row._isTotal) {
+      const hasDiff = Math.abs(Number(row.selisih)||0) >= 0.001;
+      tr.className = 'r-total' + (hasDiff ? ' has-diff' : '');
+      [
+        {v: row.AUFNR + ' Total', cls:'total-lbl'},
+        {v:'',cls:''},{v:'',cls:''},{v:'',cls:''},{v:'',cls:''},{v:'',cls:''},
+        {v:row.qty_sap, cls:'num'},
+        {v:row.qty_prd, cls:'num'},
+        {v:row.cnt,     cls:'num cnt'},
+        {v:row.selisih, cls:'num selisih'},
+        {v:'',cls:''},
+      ].forEach(({v,cls}) => {
+        const td = document.createElement('td'); td.className = cls;
+        if (cls.includes('num')) {
+          td.textContent = fmtNum(v, cls.includes('cnt'));
+          if (cls.includes('selisih') && Number(v) !== 0)
+            td.className += Number(v) < 0 ? ' val-neg' : ' val-pos';
+        } else { td.textContent = v; }
+        tr.appendChild(td);
+      });
+    } else {
+      tr.className = rowCls(row.status);
+      [
+        {v:row.AUFNR, cls:''},
+        {v:row.MATNR, cls:''},
+        {v:row.maktx, cls:''},
+        {v:row.auart, cls:''},
+        {v:row.werks, cls:''},
+        {v:row.meins, cls:''},
+        {v:row.qty_sap, cls:'num'},
+        {v:row.qty_prd, cls:'num'},
+        {v:row.cnt,     cls:'num cnt'},
+        {v:row.selisih, cls:'num selisih'},
+        {v:row.status,  cls:'status'},
+      ].forEach(({v,cls}) => {
+        const td = document.createElement('td'); td.className = cls;
+        if (cls === 'status') {
+          const b = document.createElement('span');
+          b.className = 'badge ' + bdgCls(row.status); b.textContent = v; td.appendChild(b);
+        } else if (cls.includes('num') && (v !== '' && v !== 0)) {
+          td.textContent = fmtNum(v, cls.includes('cnt'));
+          if (cls.includes('selisih') && Number(v) !== 0)
+            td.className += Number(v) < 0 ? ' val-neg' : ' val-pos';
+        } else if (cls.includes('num')) {
+          td.textContent = cls.includes('cnt') ? '0' : '0,000';
+        } else { td.textContent = v || ''; }
+        tr.appendChild(td);
+      });
+    }
+    tbody.appendChild(tr);
+  });
+  const dataCount = filteredData.length, dispCount = displayRows.length;
+  const end = Math.min(start+PER, dispCount);
+  document.getElementById('row-info').textContent =
+    `Menampilkan ${(start+1).toLocaleString('id')}–${end.toLocaleString('id')} dari ${dataCount.toLocaleString('id')} baris data`;
+  renderPager(dispCount);
+}
+
+function renderPager(total) {
+  const pages = Math.ceil(total/PER);
+  const box = document.getElementById('pager');
+  box.innerHTML = '';
+  if (pages <= 1) return;
+  const mk = (lbl,p,dis,cur) => {
+    const b = document.createElement('button');
+    b.textContent=lbl; b.disabled=dis;
+    if(cur) b.classList.add('cur');
+    b.onclick = () => { page=p; renderTable(); };
+    box.appendChild(b);
+  };
+  mk('‹', page-1, page===1, false);
+  let lo=Math.max(1,page-2), hi=Math.min(pages,page+2);
+  if(lo>1){ mk(1,1,false,false); if(lo>2) box.appendChild(Object.assign(document.createElement('span'),{textContent:'…',className:'pi'})); }
+  for(let i=lo;i<=hi;i++) mk(i,i,false,i===page);
+  if(hi<pages){ box.appendChild(Object.assign(document.createElement('span'),{textContent:'…',className:'pi'})); mk(pages,pages,false,false); }
+  mk('›', page+1, page===pages, false);
+  const info=document.createElement('span'); info.className='pi';
+  info.textContent=`Halaman ${page} dari ${pages}`; box.appendChild(info);
+}
+
+const ROWCLS = {'MATCH':'r-match','SAP LEBIH BESAR':'r-sap','PRODSYS LEBIH BESAR':'r-prd','HANYA DI SAP':'r-onsap','HANYA DI PRODSYS':'r-onprd'};
+const BDGCLS = {'MATCH':'s-match','SAP LEBIH BESAR':'s-sap','PRODSYS LEBIH BESAR':'s-prd','HANYA DI SAP':'s-onsap','HANYA DI PRODSYS':'s-onprd'};
+function rowCls(s){ return ROWCLS[s]||''; }
+function bdgCls(s){ return BDGCLS[s]||''; }
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+async function doExport() {
+  const date = document.getElementById('date-sel').value;
+  try {
+    const res = await fetch('/api/export', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({data: filteredData, date})
+    });
+    if(!res.ok){ showErr('Gagal export'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download=`compare_${date}.xlsx`; a.click();
+    URL.revokeObjectURL(url);
+  } catch(e){ showErr('Gagal export: '+e.message); }
+}
+
+// ── Upload page ────────────────────────────────────────────────────────────────
+function onFileSelect(sys, input) {
+  const f = input.files[0]; if(!f) return;
+  files[sys] = f;
+  const fn = document.getElementById('fn-'+sys);
+  fn.textContent = '✓ '+f.name; fn.classList.remove('hidden');
+  document.getElementById('drop-'+sys).classList.add('ok');
+  document.getElementById('btn-'+sys).disabled = false;
+}
+
+function setupDrag(sys) {
+  const el = document.getElementById('drop-'+sys);
+  el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', ()=>el.classList.remove('over'));
+  el.addEventListener('drop', e=>{
+    e.preventDefault(); el.classList.remove('over');
+    const input = document.getElementById('f-'+sys);
+    const dt = new DataTransfer(); dt.items.add(e.dataTransfer.files[0]);
+    input.files = dt.files; onFileSelect(sys, input);
+  });
+}
+
+async function doUpload(sys) {
+  const f = files[sys]; if(!f) return;
+  document.getElementById('btn-'+sys).disabled = true;
+  document.getElementById('spin-'+sys).classList.remove('hidden');
+  clearUploadMsg();
+  try {
+    const fd = new FormData(); fd.append('file', f);
+    const res = await fetch('/api/upload/'+sys, {method:'POST', body:fd});
+    const d = await res.json();
+    if(!res.ok || !d.ok){ showUploadErr(d.error||'Upload gagal'); }
+    else {
+      const skipped = d.skipped > 0 ? `, ${d.skipped.toLocaleString('id')} duplikat dilewati` : '';
+      showUploadOk(`${sys.toUpperCase()}: ${d.rows.toLocaleString('id')} baris baru ditambahkan${skipped} — "${d.filename}"`);
+      loadUploadStatus();
+      if(sys==='prodsys') refreshDates();
+    }
+  } catch(e){ showUploadErr('Gagal terhubung: '+e.message); }
+  finally {
+    document.getElementById('btn-'+sys).disabled = false;
+    document.getElementById('spin-'+sys).classList.add('hidden');
+  }
+}
+
+async function loadUploadStatus() {
+  try {
+    const res = await fetch('/api/upload/status');
+    const d = await res.json();
+    ['aufm','caufv','makt','prodsys'].forEach(tbl => {
+      const s = d[tbl];
+      const chip = document.getElementById('chip-'+tbl);
+      const txt  = document.getElementById('chip-'+tbl+'-txt');
+      if(s && s.rows > 0){
+        chip.className = 'status-chip chip-ok';
+        chip.querySelector('.chip-dot').style.background = '#4CAF50';
+        const ts = s.ts ? ` · ${s.ts.slice(0,16)}` : '';
+        txt.textContent = `${s.rows.toLocaleString('id')} baris · ${s.file||''}${ts}`;
+      } else {
+        chip.className = 'status-chip chip-empty';
+        chip.querySelector('.chip-dot').style.background = '#BDBDBD';
+        txt.textContent = 'Belum ada data';
+      }
+    });
+  } catch(e){ /* silent */ }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function show(prefix, which) {
+  ['loading','results','empty'].forEach(s =>
+    document.getElementById(prefix+'-'+s).classList.toggle('hidden', s!==which));
+}
+function showErr(msg)  { const e=document.getElementById('cmp-err'); e.textContent=msg; e.classList.remove('hidden'); }
+function showInfo(msg) { const e=document.getElementById('cmp-info'); e.textContent=msg; e.classList.remove('hidden'); }
+function clearErr()    { document.getElementById('cmp-err').classList.add('hidden'); }
+function clearInfo()   { document.getElementById('cmp-info').classList.add('hidden'); }
+function showUploadErr(msg){ const e=document.getElementById('up-err'); e.textContent=msg; e.classList.remove('hidden'); document.getElementById('up-ok').classList.add('hidden'); }
+function showUploadOk(msg) { const e=document.getElementById('up-ok');  e.textContent=msg; e.classList.remove('hidden'); document.getElementById('up-err').classList.add('hidden'); }
+function clearUploadMsg()  { document.getElementById('up-err').classList.add('hidden'); document.getElementById('up-ok').classList.add('hidden'); }
+</script>
+
+</body>
+</html>
