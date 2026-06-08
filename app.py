@@ -417,6 +417,10 @@ def _run_automation(date_dmy, date_iso):
         _auto["log"].append(msg)
 
     try:
+        # 0. Login SAP
+        subprocess.run(["wscript", os.path.join(macro_dir, "sap_login.vbs")], check=True)
+        log("Login SAP berhasil")
+
         # 1. Download CAUFV (filter GSTRP = tanggal dipilih, format DD.MM.YYYY)
         subprocess.run(["wscript", os.path.join(macro_dir, "caufv.vbs"), date_dmy], check=True)
         log(f"CAUFV didownload ({date_dmy})")

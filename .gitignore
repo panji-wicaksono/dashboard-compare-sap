@@ -1,0 +1,18 @@
+# Kredensial — jangan pernah di-commit
+.env
+
+# Database lokal server
+dashboard.db
+
+# File data SAP (lokal, besar, selalu berubah)
+data/
+data upload/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Excel lock files
+~$*.xlsx
+~$*.xls
