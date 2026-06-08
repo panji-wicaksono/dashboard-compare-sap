@@ -434,6 +434,13 @@ def _run_automation(date_dmy, date_iso):
         _auto["log"].append(msg)
 
     try:
+        # Hapus file lama agar jika macro gagal menghasilkan file baru ketahuan
+        for _fname in ["caufv.xls", "aufm.xls", "zppcpfint_grauto.xls"]:
+            try:
+                os.remove(os.path.join(data_dir, _fname))
+            except OSError:
+                pass
+
         # 0. Login SAP
         result = subprocess.run(["wscript", "/B", os.path.join(macro_dir, "sap_login.vbs")])
         if result.returncode == 2:

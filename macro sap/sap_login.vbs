@@ -71,7 +71,14 @@ Err.Clear
 On Error GoTo 0
 
 If Not onLoginScreen Then
-    ' Sudah login, tidak perlu apa-apa
+    ' Tutup dialog auto-logout / idle warning jika ada sebelum lanjut
+    On Error Resume Next
+    Dim warnDlg : Set warnDlg = session.findById("wnd[1]")
+    If Err.Number = 0 Then
+        warnDlg.sendVKey 0  ' Enter = Continue / OK
+        WScript.Sleep 1000
+    End If
+    Err.Clear : On Error GoTo 0
     WScript.Quit 0
 End If
 
