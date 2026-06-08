@@ -1,4 +1,5 @@
-import os, io, json, traceback, sqlite3
+import os, io, json, traceback, sqlite3, subprocess, threading
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file
 import pandas as pd
 
@@ -15,10 +16,6 @@ SCHEMA = [
         MANDT TEXT, MBLNR TEXT, MJAHR TEXT, ZEILE TEXT,
         AUFNR TEXT, MATNR TEXT, BWART TEXT, MENGE REAL,
         MEINS TEXT, BLDAT TEXT, WERKS TEXT, LGORT TEXT
-    )""",
-    """CREATE TABLE IF NOT EXISTS aufk (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        AUFNR TEXT UNIQUE, AUART TEXT, WERKS TEXT
     )""",
     """CREATE TABLE IF NOT EXISTS caufv (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,6 +106,19 @@ def get_db():
     return conn
 
 
+class _RawFile:
+    """Wrapper agar file lokal bisa dipakai seperti Flask FileStorage oleh read_sap_file."""
+    def __init__(self, path):
+        self.filename = os.path.basename(path)
+        self._path = path
+    def read(self):
+        with open(self._path, "rb") as fh:
+            return fh.read()
+
+
+_auto = {"running": False, "log": [], "error": None, "done": False}
+
+
 # ── Parsers ────────────────────────────────────────────────────────────────────
 
 def read_sap_file(file_storage):
@@ -117,7 +127,12 @@ def read_sap_file(file_storage):
     raw = file_storage.read()
 
     if name.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        try:
+            df = pd.read_excel(io.BytesIO(raw), dtype=str)
+        except Exception:
+            # SAP sering export tab-separated text dengan ekstensi .xls
+            text = raw.decode("utf-8-sig", errors="replace")
+            df = pd.read_csv(io.StringIO(text), sep="\t", dtype=str)
     elif name.endswith(".csv"):
         text = raw.decode("utf-8-sig", errors="replace")
         first = text.split("\n")[0]
@@ -184,6 +199,156 @@ def index():
     return render_template("index.html")
 
 
+# ── Insert helpers (dipakai oleh upload routes DAN automation) ─────────────────
+
+def _insert_aufm(f):
+    df = read_sap_file(f)
+    required = ["MANDT", "MBLNR", "MJAHR", "ZEILE", "AUFNR", "MATNR", "BWART", "MENGE", "MEINS", "BLDAT", "WERKS"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Kolom tidak ditemukan: {missing}. Kolom tersedia: {list(df.columns)}")
+
+    df["MENGE"] = df["MENGE"].apply(parse_num)
+    df["BLDAT"] = df["BLDAT"].apply(parse_date_dmy)
+    df = df[df["BWART"].isin(["531", "532", "888", "889"])]
+
+    rows = [
+        (
+            str(r.get("MANDT", "") or "").strip(),
+            str(r.get("MBLNR", "") or "").strip(),
+            str(r.get("MJAHR", "") or "").strip(),
+            str(r.get("ZEILE", "") or "").strip(),
+            str(r.get("AUFNR", "") or "").strip(),
+            str(r.get("MATNR", "") or "").strip(),
+            str(r.get("BWART", "") or "").strip(),
+            r.get("MENGE", 0),
+            str(r.get("MEINS", "") or "").strip(),
+            r.get("BLDAT"),
+            str(r.get("WERKS", "") or "").strip(),
+            str(r.get("LGORT", "") or "").strip() if "LGORT" in df.columns else "",
+        )
+        for _, r in df.iterrows()
+        if str(r.get("AUFNR", "") or "").strip()
+    ]
+
+    with get_db() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM aufm").fetchone()[0]
+        conn.executemany(
+            "INSERT OR IGNORE INTO aufm (MANDT,MBLNR,MJAHR,ZEILE,AUFNR,MATNR,BWART,MENGE,MEINS,BLDAT,WERKS,LGORT) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        inserted = conn.execute("SELECT COUNT(*) FROM aufm").fetchone()[0] - before
+        conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("aufm", f.filename, inserted))
+        conn.commit()
+
+    return inserted, len(rows) - inserted
+
+
+def _insert_caufv(f):
+    df = read_sap_file(f)
+    missing = [c for c in ["AUFNR", "AUART"] if c not in df.columns]
+    if missing:
+        raise ValueError(f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}")
+
+    gstrp_col = next((c for c in ["GSTRP", "FTRMS", "GSTRS"] if c in df.columns), None)
+
+    rows = [
+        (
+            str(r.get("AUFNR", "") or "").strip(),
+            str(r.get("AUART", "") or "").strip(),
+            parse_date_dmy(r.get(gstrp_col)) if gstrp_col else None,
+            str(r.get("WERKS", "") or "").strip(),
+        )
+        for _, r in df.iterrows()
+        if str(r.get("AUFNR", "") or "").strip() and str(r.get("AUART", "") or "").strip()
+    ]
+
+    with get_db() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM caufv").fetchone()[0]
+        conn.executemany("INSERT OR IGNORE INTO caufv (AUFNR,AUART,GSTRP,WERKS) VALUES (?,?,?,?)", rows)
+        inserted = conn.execute("SELECT COUNT(*) FROM caufv").fetchone()[0] - before
+        conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("caufv", f.filename, inserted))
+        conn.commit()
+
+    return inserted, len(rows) - inserted
+
+
+def _insert_makt(f):
+    df = read_sap_file(f)
+    missing = [c for c in ["MATNR", "MAKTX"] if c not in df.columns]
+    if missing:
+        raise ValueError(f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}")
+
+    rows = [
+        (str(r.get("MATNR", "") or "").strip(), str(r.get("MAKTX", "") or "").strip())
+        for _, r in df.iterrows()
+        if str(r.get("MATNR", "") or "").strip()
+    ]
+
+    with get_db() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM makt").fetchone()[0]
+        conn.executemany("INSERT OR IGNORE INTO makt (MATNR,MAKTX) VALUES (?,?)", rows)
+        inserted = conn.execute("SELECT COUNT(*) FROM makt").fetchone()[0] - before
+        conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("makt", f.filename, inserted))
+        conn.commit()
+
+    return inserted, len(rows) - inserted
+
+
+def _insert_prodsys(f):
+    df = read_sap_file(f)
+    required = ["SAPID", "CAUFV_AUFN", "CAUFV_WERK", "MSEG_MATNR", "MSEG_MENGE", "MSEG_CONVM", "ZDATA1"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}")
+
+    df["MSEG_MENGE"] = df["MSEG_MENGE"].apply(parse_num)
+    df["MSEG_CONVM"] = df["MSEG_CONVM"].apply(parse_num)
+    df["ZDATA1"]     = df["ZDATA1"].apply(parse_num)
+
+    if "CAUFV_GSTRP" in df.columns:
+        df["_GSTRP"] = df["CAUFV_GSTRP"].apply(parse_date_dmy)
+    elif "AFRUD_ISDD" in df.columns:
+        df["_GSTRP"] = df["AFRUD_ISDD"].apply(parse_date_iso)
+    else:
+        df["_GSTRP"] = None
+
+    df["_AFRUD"] = df["AFRUD_ISDD"].apply(parse_date_iso) if "AFRUD_ISDD" in df.columns else None
+
+    rows = [
+        (
+            str(r.get("SAPID", "") or "").strip(),
+            str(r.get("CAUFV_AUFN", "") or "").strip(),
+            str(r.get("MSEG_MATNR", "") or "").strip(),
+            r.get("MSEG_MENGE", 0),
+            r.get("MSEG_CONVM", 0),
+            r.get("ZDATA1", 0),
+            str(r.get("MSEG_MEINS", "") or "").strip(),
+            r.get("_GSTRP"),
+            r.get("_AFRUD"),
+            str(r.get("CAUFV_WERK", "") or "").strip(),
+            str(r.get("CAUFV_AUAR", "") or "").strip(),
+            str(r.get("KEY_STATUS", "") or "").strip(),
+        )
+        for _, r in df.iterrows()
+        if str(r.get("SAPID", "") or "").strip()
+    ]
+
+    src = "CAUFV_GSTRP" if "CAUFV_GSTRP" in df.columns else "AFRUD_ISDD (fallback)"
+
+    with get_db() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM prodsys").fetchone()[0]
+        conn.executemany(
+            "INSERT OR IGNORE INTO prodsys (SAPID,AUFNR,MATNR,MENGE,CONVM,ZDATA1,MEINS,GSTRP,AFRUD_ISDD,WERKS,AUART,KEY_STATUS) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        inserted = conn.execute("SELECT COUNT(*) FROM prodsys").fetchone()[0] - before
+        conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("prodsys", f.filename, inserted))
+        conn.commit()
+
+    return inserted, len(rows) - inserted, src
+
+
 # ── Upload APIs ────────────────────────────────────────────────────────────────
 
 @app.route("/api/upload/aufm", methods=["POST"])
@@ -192,74 +357,10 @@ def upload_aufm():
     if not f:
         return jsonify({"error": "File diperlukan"}), 400
     try:
-        df = read_sap_file(f)
-        required = ["MANDT", "MBLNR", "MJAHR", "ZEILE", "AUFNR", "MATNR", "BWART", "MENGE", "MEINS", "BLDAT", "WERKS"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            return jsonify({"error": f"Kolom tidak ditemukan: {missing}. Kolom tersedia: {list(df.columns)}"}), 400
-
-        df["MENGE"] = df["MENGE"].apply(parse_num)
-        df["BLDAT"] = df["BLDAT"].apply(parse_date_dmy)
-        df = df[df["BWART"].isin(["531", "532", "888", "889"])]
-
-        rows = [
-            (
-                str(r.get("MANDT", "") or "").strip(),
-                str(r.get("MBLNR", "") or "").strip(),
-                str(r.get("MJAHR", "") or "").strip(),
-                str(r.get("ZEILE", "") or "").strip(),
-                str(r.get("AUFNR", "") or "").strip(),
-                str(r.get("MATNR", "") or "").strip(),
-                str(r.get("BWART", "") or "").strip(),
-                r.get("MENGE", 0),
-                str(r.get("MEINS", "") or "").strip(),
-                r.get("BLDAT"),
-                str(r.get("WERKS", "") or "").strip(),
-                str(r.get("LGORT", "") or "").strip() if "LGORT" in df.columns else "",
-            )
-            for _, r in df.iterrows()
-            if str(r.get("AUFNR", "") or "").strip()
-        ]
-
-        with get_db() as conn:
-            before = conn.execute("SELECT COUNT(*) FROM aufm").fetchone()[0]
-            conn.executemany(
-                "INSERT OR IGNORE INTO aufm (MANDT,MBLNR,MJAHR,ZEILE,AUFNR,MATNR,BWART,MENGE,MEINS,BLDAT,WERKS,LGORT) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                rows,
-            )
-            inserted = conn.execute("SELECT COUNT(*) FROM aufm").fetchone()[0] - before
-            conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("aufm", f.filename, inserted))
-            conn.commit()
-
-        return jsonify({"ok": True, "rows": inserted, "skipped": len(rows) - inserted, "filename": f.filename})
-    except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
-
-
-@app.route("/api/upload/aufk", methods=["POST"])
-def upload_aufk():
-    f = request.files.get("file")
-    if not f:
-        return jsonify({"error": "File diperlukan"}), 400
-    try:
-        df = read_sap_file(f)
-        missing = [c for c in ["AUFNR", "AUART"] if c not in df.columns]
-        if missing:
-            return jsonify({"error": f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}"}), 400
-
-        rows = [
-            (str(r.get("AUFNR", "") or "").strip(), str(r.get("AUART", "") or "").strip(), str(r.get("WERKS", "") or "").strip())
-            for _, r in df.iterrows()
-            if str(r.get("AUFNR", "") or "").strip() and str(r.get("AUART", "") or "").strip()
-        ]
-
-        with get_db() as conn:
-            conn.execute("DELETE FROM aufk")
-            conn.executemany("INSERT OR REPLACE INTO aufk (AUFNR,AUART,WERKS) VALUES (?,?,?)", rows)
-            conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("aufk", f.filename, len(rows)))
-            conn.commit()
-
-        return jsonify({"ok": True, "rows": len(rows), "filename": f.filename})
+        inserted, skipped = _insert_aufm(f)
+        return jsonify({"ok": True, "rows": inserted, "skipped": skipped, "filename": f.filename})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
@@ -270,32 +371,10 @@ def upload_caufv():
     if not f:
         return jsonify({"error": "File diperlukan"}), 400
     try:
-        df = read_sap_file(f)
-        missing = [c for c in ["AUFNR", "AUART"] if c not in df.columns]
-        if missing:
-            return jsonify({"error": f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}"}), 400
-
-        gstrp_col = next((c for c in ["GSTRP", "FTRMS", "GSTRS"] if c in df.columns), None)
-
-        rows = [
-            (
-                str(r.get("AUFNR", "") or "").strip(),
-                str(r.get("AUART", "") or "").strip(),
-                parse_date_dmy(r.get(gstrp_col)) if gstrp_col else None,
-                str(r.get("WERKS", "") or "").strip(),
-            )
-            for _, r in df.iterrows()
-            if str(r.get("AUFNR", "") or "").strip() and str(r.get("AUART", "") or "").strip()
-        ]
-
-        with get_db() as conn:
-            before = conn.execute("SELECT COUNT(*) FROM caufv").fetchone()[0]
-            conn.executemany("INSERT OR IGNORE INTO caufv (AUFNR,AUART,GSTRP,WERKS) VALUES (?,?,?,?)", rows)
-            inserted = conn.execute("SELECT COUNT(*) FROM caufv").fetchone()[0] - before
-            conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("caufv", f.filename, inserted))
-            conn.commit()
-
-        return jsonify({"ok": True, "rows": inserted, "skipped": len(rows) - inserted, "filename": f.filename})
+        inserted, skipped = _insert_caufv(f)
+        return jsonify({"ok": True, "rows": inserted, "skipped": skipped, "filename": f.filename})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
@@ -306,25 +385,10 @@ def upload_makt():
     if not f:
         return jsonify({"error": "File diperlukan"}), 400
     try:
-        df = read_sap_file(f)
-        missing = [c for c in ["MATNR", "MAKTX"] if c not in df.columns]
-        if missing:
-            return jsonify({"error": f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}"}), 400
-
-        rows = [
-            (str(r.get("MATNR", "") or "").strip(), str(r.get("MAKTX", "") or "").strip())
-            for _, r in df.iterrows()
-            if str(r.get("MATNR", "") or "").strip()
-        ]
-
-        with get_db() as conn:
-            before = conn.execute("SELECT COUNT(*) FROM makt").fetchone()[0]
-            conn.executemany("INSERT OR IGNORE INTO makt (MATNR,MAKTX) VALUES (?,?)", rows)
-            inserted = conn.execute("SELECT COUNT(*) FROM makt").fetchone()[0] - before
-            conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("makt", f.filename, inserted))
-            conn.commit()
-
-        return jsonify({"ok": True, "rows": inserted, "skipped": len(rows) - inserted, "filename": f.filename})
+        inserted, skipped = _insert_makt(f)
+        return jsonify({"ok": True, "rows": inserted, "skipped": skipped, "filename": f.filename})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
@@ -335,59 +399,95 @@ def upload_prodsys():
     if not f:
         return jsonify({"error": "File diperlukan"}), 400
     try:
-        df = read_sap_file(f)
-        required = ["SAPID", "CAUFV_AUFN", "CAUFV_WERK", "MSEG_MATNR", "MSEG_MENGE", "MSEG_CONVM", "ZDATA1"]
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            return jsonify({"error": f"Kolom tidak ditemukan: {missing}. Tersedia: {list(df.columns)}"}), 400
-
-        df["MSEG_MENGE"] = df["MSEG_MENGE"].apply(parse_num)
-        df["MSEG_CONVM"] = df["MSEG_CONVM"].apply(parse_num)
-        df["ZDATA1"]     = df["ZDATA1"].apply(parse_num)
-
-        # GSTRP = CAUFV_GSTRP (tanggal mulai produksi), fallback ke AFRUD_ISDD jika tidak ada
-        if "CAUFV_GSTRP" in df.columns:
-            df["_GSTRP"] = df["CAUFV_GSTRP"].apply(parse_date_dmy)
-        elif "AFRUD_ISDD" in df.columns:
-            df["_GSTRP"] = df["AFRUD_ISDD"].apply(parse_date_iso)
-        else:
-            df["_GSTRP"] = None
-
-        df["_AFRUD"] = df["AFRUD_ISDD"].apply(parse_date_iso) if "AFRUD_ISDD" in df.columns else None
-
-        rows = [
-            (
-                str(r.get("SAPID", "") or "").strip(),
-                str(r.get("CAUFV_AUFN", "") or "").strip(),
-                str(r.get("MSEG_MATNR", "") or "").strip(),
-                r.get("MSEG_MENGE", 0),
-                r.get("MSEG_CONVM", 0),
-                r.get("ZDATA1", 0),
-                str(r.get("MSEG_MEINS", "") or "").strip(),
-                r.get("_GSTRP"),
-                r.get("_AFRUD"),
-                str(r.get("CAUFV_WERK", "") or "").strip(),
-                str(r.get("CAUFV_AUAR", "") or "").strip(),
-                str(r.get("KEY_STATUS", "") or "").strip(),
-            )
-            for _, r in df.iterrows()
-            if str(r.get("SAPID", "") or "").strip()
-        ]
-
-        with get_db() as conn:
-            before = conn.execute("SELECT COUNT(*) FROM prodsys").fetchone()[0]
-            conn.executemany(
-                "INSERT OR IGNORE INTO prodsys (SAPID,AUFNR,MATNR,MENGE,CONVM,ZDATA1,MEINS,GSTRP,AFRUD_ISDD,WERKS,AUART,KEY_STATUS) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                rows,
-            )
-            inserted = conn.execute("SELECT COUNT(*) FROM prodsys").fetchone()[0] - before
-            conn.execute("INSERT INTO upload_log (tbl,filename,rows) VALUES (?,?,?)", ("prodsys", f.filename, inserted))
-            conn.commit()
-
-        src = "CAUFV_GSTRP" if "CAUFV_GSTRP" in df.columns else "AFRUD_ISDD (fallback)"
-        return jsonify({"ok": True, "rows": inserted, "skipped": len(rows) - inserted, "filename": f.filename, "date_source": src})
+        inserted, skipped, src = _insert_prodsys(f)
+        return jsonify({"ok": True, "rows": inserted, "skipped": skipped, "filename": f.filename, "date_source": src})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+# ── Automation ─────────────────────────────────────────────────────────────────
+
+def _run_automation(date_dmy, date_iso):
+    macro_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "macro sap")
+    data_dir  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data upload")
+
+    def log(msg):
+        _auto["log"].append(msg)
+
+    try:
+        # 1. Download CAUFV (filter GSTRP = tanggal dipilih, format DD.MM.YYYY)
+        subprocess.run(["wscript", os.path.join(macro_dir, "caufv.vbs"), date_dmy], check=True)
+        log(f"CAUFV didownload ({date_dmy})")
+
+        # 2. Baca AUFNR dari caufv.xls → salin ke clipboard
+        df_c = read_sap_file(_RawFile(os.path.join(data_dir, "caufv.xls")))
+        aufnr_list = df_c["AUFNR"].dropna().str.strip().unique().tolist()
+        aufnr_str  = "\n".join(aufnr_list)
+        subprocess.run("clip", input=aufnr_str.encode("utf-8"), shell=True, check=True)
+        log(f"{len(aufnr_list)} AUFNR disalin ke clipboard")
+
+        # 3. Download AUFM (menggunakan clipboard AUFNR)
+        subprocess.run(["wscript", os.path.join(macro_dir, "aufm.vbs")], check=True)
+        log("AUFM didownload dari SAP")
+
+        # 4. Download ZPPCPFINT_GRAUTO (filter date = YYYY-MM-DD*)
+        subprocess.run(["wscript", os.path.join(macro_dir, "zppcpfint_grauto.vbs"), date_iso + "*"], check=True)
+        log(f"ZPPCPFINT_GRAUTO didownload ({date_iso})")
+
+        # 5. Upload CAUFV ke database
+        ins, skp = _insert_caufv(_RawFile(os.path.join(data_dir, "caufv.xls")))
+        log(f"CAUFV tersimpan: {ins} baris baru, {skp} duplikat")
+
+        # 6. Upload AUFM ke database
+        ins, skp = _insert_aufm(_RawFile(os.path.join(data_dir, "aufm.xls")))
+        log(f"AUFM tersimpan: {ins} baris baru, {skp} duplikat")
+
+        # 7. Upload Prodsys ke database
+        ins, skp, _ = _insert_prodsys(_RawFile(os.path.join(data_dir, "zppcpfint_grauto.xls")))
+        log(f"Prodsys tersimpan: {ins} baris baru, {skp} duplikat")
+
+        _auto["done"] = True
+
+    except Exception as e:
+        _auto["error"] = str(e)
+    finally:
+        _auto["running"] = False
+
+
+@app.route("/api/automation/run", methods=["POST"])
+def automation_run():
+    if _auto["running"]:
+        return jsonify({"error": "Automasi sedang berjalan"}), 409
+
+    data     = request.get_json(silent=True) or {}
+    date_str = data.get("date", "").strip()
+
+    if date_str:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Format tanggal tidak valid. Gunakan YYYY-MM-DD"}), 400
+    else:
+        dt = datetime.now()
+
+    date_dmy = dt.strftime("%d.%m.%Y")
+    date_iso = dt.strftime("%Y-%m-%d")
+
+    _auto.update({"running": True, "log": [], "error": None, "done": False})
+    threading.Thread(target=_run_automation, args=(date_dmy, date_iso), daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/automation/status")
+def automation_status():
+    return jsonify({
+        "running": _auto["running"],
+        "log":     _auto["log"],
+        "error":   _auto["error"],
+        "done":    _auto["done"],
+    })
 
 
 @app.route("/api/upload/status")

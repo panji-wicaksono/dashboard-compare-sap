@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SAP vs Prodsys — GR Compare</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Tahoma,sans-serif;background:#f0f2f5;color:#333;font-size:14px;min-height:100vh}
@@ -142,6 +143,17 @@ tbody tr:hover{filter:brightness(.97)}
 .spin-wrap{display:flex;align-items:center;gap:10px;padding:16px;color:#1565C0;font-size:14px}
 .spin{width:22px;height:22px;border:3px solid #BBDEFB;border-top-color:#1565C0;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* Automation macro card */
+.macro-card{background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.1);padding:20px 22px;margin-bottom:18px;border-left:4px solid #1565C0}
+.macro-card h3{font-size:14px;font-weight:700;color:#1565C0;margin-bottom:3px}
+.macro-card .macro-desc{font-size:12px;color:#666;margin-bottom:14px}
+.macro-log{list-style:none;margin-top:10px;font-size:13px;line-height:1.6}
+.macro-log li{padding:3px 0;display:flex;align-items:flex-start;gap:8px}
+.log-ck{color:#43A047;font-size:15px;flex-shrink:0;margin-top:1px}
+.log-spin-ico{width:14px;height:14px;border:2px solid #BBDEFB;border-top-color:#1565C0;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;margin-top:3px}
+.macro-done{margin-top:10px;color:#2E7D32;font-weight:600;font-size:13px}
+.macro-err{margin-top:10px;color:#C62828;font-size:13px;word-break:break-word}
 
 .hidden{display:none!important}
 
@@ -285,6 +297,25 @@ tbody tr:hover{filter:brightness(.97)}
 ════════════════════════════════════════════ -->
 <div id="page-upload" class="hidden">
 
+  <!-- Automation via SAP Macro -->
+  <div class="macro-card">
+    <h3>⚡ Upload via SAP Macro</h3>
+    <p class="macro-desc">Download otomatis dari SAP (CAUFV → AUFM → ZPPCPFINT_GRAUTO) lalu upload ke dashboard. SAP GUI harus sudah terbuka dan user sudah login.</p>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+      <div class="field">
+        <span class="lbl">Tanggal Download</span>
+        <input type="date" id="auto-date" style="padding:5px 9px;border:1px solid #ccc;border-radius:4px;font-size:13px;cursor:pointer">
+      </div>
+      <button class="btn btn-primary btn-sm" id="btn-auto" onclick="runAutomation()" style="align-self:flex-end">▶ Jalankan Automasi</button>
+    </div>
+    <div id="auto-wrap" class="hidden">
+      <ul class="macro-log" id="auto-log"></ul>
+      <div id="auto-running" class="hidden spin-wrap" style="margin-top:6px"><div class="spin"></div>Sedang berjalan...</div>
+      <div id="auto-done" class="macro-done hidden">✓ Selesai! Data dashboard sudah diperbarui.</div>
+      <div id="auto-err"  class="macro-err  hidden"></div>
+    </div>
+  </div>
+
   <div class="alert alert-info">
     Upload file export SAP sesuai tabel masing-masing. Data lama akan digantikan setiap kali upload baru.
     Format yang diterima: <strong>.xlsx, .xls, .csv</strong>. File harus berformat export SAP standar (baris pertama deskripsi kolom akan dilewati otomatis).
@@ -412,7 +443,7 @@ tbody tr:hover{filter:brightness(.97)}
 // ── State ──────────────────────────────────────────────────────────────────────
 let allData = [], filteredData = [], displayRows = [], page = 1, activeStatus = '';
 const PER = 200;
-const files = {};   // { aufm: File, aufk: File, makt: File, prodsys: File }
+const files = {};   // { aufm: File, caufv: File, makt: File, prodsys: File }
 
 // ── Tab navigation ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
@@ -427,6 +458,7 @@ function switchTab(tab) {
 document.addEventListener('DOMContentLoaded', () => {
   refreshDates();
   setupDrag('aufm'); setupDrag('caufv'); setupDrag('makt'); setupDrag('prodsys');
+  document.getElementById('auto-date').value = new Date().toISOString().slice(0, 10);
 });
 
 // ── Date list ──────────────────────────────────────────────────────────────────
@@ -443,7 +475,12 @@ async function refreshDates() {
       o.textContent = formatDate(dt);
       sel.appendChild(o);
     });
-    if (prev && d.dates && d.dates.includes(prev)) sel.value = prev;
+    if (prev && d.dates && d.dates.includes(prev)) {
+      sel.value = prev;
+    } else if (d.dates && d.dates.length) {
+      sel.value = d.dates[0];
+      loadCompare();
+    }
     if (!d.dates || !d.dates.length) showInfo('Belum ada data Prodsys. Upload file terlebih dahulu di menu Upload Data.');
     else clearInfo();
   } catch(e) { showErr('Gagal memuat daftar tanggal: ' + e.message); }
@@ -734,6 +771,69 @@ async function loadUploadStatus() {
       }
     });
   } catch(e){ /* silent */ }
+}
+
+// ── Automation ─────────────────────────────────────────────────────────────────
+let _autoPoll = null;
+
+async function runAutomation() {
+  const btn = document.getElementById('btn-auto');
+  btn.disabled = true;
+  document.getElementById('auto-wrap').classList.remove('hidden');
+  document.getElementById('auto-log').innerHTML = '';
+  document.getElementById('auto-done').classList.add('hidden');
+  document.getElementById('auto-err').classList.add('hidden');
+  document.getElementById('auto-running').classList.remove('hidden');
+
+  const date = document.getElementById('auto-date').value;
+  if (!date) { _autoShowErr('Pilih tanggal terlebih dahulu'); btn.disabled = false; return; }
+
+  try {
+    const res = await fetch('/api/automation/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date })
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      _autoShowErr(d.error || 'Gagal memulai automasi');
+      btn.disabled = false;
+      return;
+    }
+    _autoPoll = setInterval(_autoCheck, 2000);
+  } catch(e) {
+    _autoShowErr('Gagal terhubung: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+async function _autoCheck() {
+  try {
+    const res = await fetch('/api/automation/status');
+    const d = await res.json();
+    const ul = document.getElementById('auto-log');
+    ul.innerHTML = (d.log || []).map(m => `<li><span class="log-ck">✓</span>${m}</li>`).join('');
+    if (d.error) {
+      clearInterval(_autoPoll); _autoPoll = null;
+      document.getElementById('auto-running').classList.add('hidden');
+      _autoShowErr('Error: ' + d.error);
+      document.getElementById('btn-auto').disabled = false;
+    } else if (d.done) {
+      clearInterval(_autoPoll); _autoPoll = null;
+      document.getElementById('auto-running').classList.add('hidden');
+      document.getElementById('auto-done').classList.remove('hidden');
+      document.getElementById('btn-auto').disabled = false;
+      loadUploadStatus();
+      refreshDates();
+    }
+  } catch(e) { /* abaikan error jaringan sementara saat polling */ }
+}
+
+function _autoShowErr(msg) {
+  const el = document.getElementById('auto-err');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  document.getElementById('auto-running').classList.add('hidden');
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
