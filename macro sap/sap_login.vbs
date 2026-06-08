@@ -88,11 +88,12 @@ WScript.Sleep 2000
 ' ── Tangani dialog "multiple logon" jika muncul ────────────────────────────────
 On Error Resume Next
 Dim multiLogon : Set multiLogon = session.findById("wnd[1]")
-If Err.Number = 0 Then
-    ' Pilih "Lanjutkan logon tanpa menghentikan sesi lain" (opsi 2)
-    session.findById("wnd[1]/usr/radMULTI_LOGON_OPT2").select
-    session.findById("wnd[1]/tbar[0]/btn[0]").press
-    WScript.Sleep 1000
-End If
+Dim multiLogonMuncul : multiLogonMuncul = (Err.Number = 0)
 Err.Clear
 On Error GoTo 0
+
+If multiLogonMuncul Then
+    ' Batalkan login — user SAP sedang dipakai di sesi lain
+    session.findById("wnd[1]").sendVKey 12  ' F12 = Cancel
+    WScript.Quit 2
+End If

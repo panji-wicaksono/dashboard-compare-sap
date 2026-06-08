@@ -418,7 +418,11 @@ def _run_automation(date_dmy, date_iso):
 
     try:
         # 0. Login SAP
-        subprocess.run(["wscript", os.path.join(macro_dir, "sap_login.vbs")], check=True)
+        result = subprocess.run(["wscript", os.path.join(macro_dir, "sap_login.vbs")])
+        if result.returncode == 2:
+            raise RuntimeError("Login SAP gagal: user sedang dipakai di sesi lain. Tutup sesi SAP yang aktif lalu coba lagi.")
+        if result.returncode != 0:
+            raise RuntimeError(f"Login SAP gagal (exit code {result.returncode}). Periksa kredensial di file .env dan pastikan SAP Logon sudah terbuka.")
         log("Login SAP berhasil")
 
         # 1. Download CAUFV (filter GSTRP = tanggal dipilih, format DD.MM.YYYY)
