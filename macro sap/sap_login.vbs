@@ -69,7 +69,7 @@ Set session = connection.Children(0)
 Dim wshDlg : Set wshDlg = CreateObject("WScript.Shell")
 Dim dlgAttempt : dlgAttempt = 0
 Do While dlgAttempt < 5
-    If wshDlg.AppActivate("SAP GUI for Windows") Then
+    If wshDlg.AppActivate("SAP GUI for Windows 740") Then
         WScript.Sleep 400
         wshDlg.SendKeys "n"   ' tombol No
         WScript.Sleep 600
