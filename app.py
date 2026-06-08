@@ -436,17 +436,29 @@ def _run_automation(date_dmy, date_iso):
         subprocess.run(["wscript", os.path.join(macro_dir, "zppcpfint_grauto.vbs"), date_iso + "*"], check=True)
         log(f"ZPPCPFINT_GRAUTO didownload ({date_iso})")
 
-        # 5. Upload CAUFV ke database
+        # 5. Hapus data lama untuk tanggal ini, lalu insert fresh
+        with get_db() as conn:
+            # CAUFV: hapus by GSTRP
+            del_c = conn.execute("DELETE FROM caufv WHERE GSTRP = ?", (date_iso,)).rowcount
+            # AUFM: hapus by AUFNR (chunked agar tidak lewati batas parameter SQLite)
+            del_a = 0
+            chunk = 500
+            for i in range(0, len(aufnr_list), chunk):
+                ph = ",".join(["?"] * len(aufnr_list[i:i+chunk]))
+                del_a += conn.execute(f"DELETE FROM aufm WHERE AUFNR IN ({ph})", aufnr_list[i:i+chunk]).rowcount
+            # PRODSYS: hapus by GSTRP
+            del_p = conn.execute("DELETE FROM prodsys WHERE GSTRP = ?", (date_iso,)).rowcount
+            conn.commit()
+        log(f"Data lama dihapus — CAUFV: {del_c}, AUFM: {del_a}, Prodsys: {del_p} baris")
+
         ins, skp = _insert_caufv(_RawFile(os.path.join(data_dir, "caufv.xls")))
-        log(f"CAUFV tersimpan: {ins} baris baru, {skp} duplikat")
+        log(f"CAUFV tersimpan: {ins} baris baru")
 
-        # 6. Upload AUFM ke database
         ins, skp = _insert_aufm(_RawFile(os.path.join(data_dir, "aufm.xls")))
-        log(f"AUFM tersimpan: {ins} baris baru, {skp} duplikat")
+        log(f"AUFM tersimpan: {ins} baris baru")
 
-        # 7. Upload Prodsys ke database
         ins, skp, _ = _insert_prodsys(_RawFile(os.path.join(data_dir, "zppcpfint_grauto.xls")))
-        log(f"Prodsys tersimpan: {ins} baris baru, {skp} duplikat")
+        log(f"Prodsys tersimpan: {ins} baris baru")
 
         _auto["done"] = True
 
