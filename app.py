@@ -418,7 +418,7 @@ def _run_automation(date_dmy, date_iso):
 
     try:
         # 0. Login SAP
-        result = subprocess.run(["wscript", os.path.join(macro_dir, "sap_login.vbs")])
+        result = subprocess.run(["wscript", "/B", os.path.join(macro_dir, "sap_login.vbs")])
         if result.returncode == 2:
             raise RuntimeError("Login SAP gagal: user sedang dipakai di sesi lain. Tutup sesi SAP yang aktif lalu coba lagi.")
         if result.returncode != 0:
@@ -426,7 +426,7 @@ def _run_automation(date_dmy, date_iso):
         log("Login SAP berhasil")
 
         def run_macro(script_name, args, no_data_msg):
-            r = subprocess.run(["wscript", os.path.join(macro_dir, script_name)] + args)
+            r = subprocess.run(["wscript", "/B", os.path.join(macro_dir, script_name)] + args)
             if r.returncode == 3:
                 raise RuntimeError(f"Tidak ada data: {no_data_msg}")
             if r.returncode != 0:
