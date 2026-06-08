@@ -34,6 +34,6 @@ session.findById("wnd[0]/tbar[1]/btn[45]").press
 session.findById("wnd[1]/usr/sub:SAPLSPO5:0101/radSPOPLI-SELFLAG[1,0]").select
 session.findById("wnd[1]/usr/sub:SAPLSPO5:0101/radSPOPLI-SELFLAG[1,0]").setFocus
 session.findById("wnd[1]").sendVKey 0
-session.findById("wnd[1]/usr/ctxtRLGRAP-FILENAME").text = "C:\Users\USER\Documents\01 Work\CPI\02 Learning\06 Development\dashboard-compare-sap\data upload\zppcpfint_grauto.xls"
+session.findById("wnd[1]/usr/ctxtRLGRAP-FILENAME").text = "C:\Users\CPIFeedmill\Documents\Program Panji\dashboard-compare-sap\data upload\zppcpfint_grauto.xls"
 session.findById("wnd[1]/tbar[0]/btn[0]").press
 session.findById("wnd[1]/tbar[0]/btn[0]").press
