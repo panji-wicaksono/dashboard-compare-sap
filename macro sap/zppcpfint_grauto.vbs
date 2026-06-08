@@ -31,6 +31,14 @@ session.findById("wnd[0]/usr/txtI5-LOW").setFocus
 session.findById("wnd[0]/usr/txtI5-LOW").caretPosition = 10
 session.findById("wnd[0]/tbar[1]/btn[8]").press
 session.findById("wnd[0]/tbar[1]/btn[45]").press
+On Error Resume Next
+Dim chkExport : Set chkExport = session.findById("wnd[1]/usr/sub:SAPLSPO5:0101/radSPOPLI-SELFLAG[1,0]")
+Dim exportOk  : exportOk     = (Err.Number = 0)
+Err.Clear : On Error GoTo 0
+If Not exportOk Then
+    On Error Resume Next : session.findById("wnd[1]/tbar[0]/btn[0]").press : Err.Clear : On Error GoTo 0
+    WScript.Quit 3
+End If
 session.findById("wnd[1]/usr/sub:SAPLSPO5:0101/radSPOPLI-SELFLAG[1,0]").select
 session.findById("wnd[1]/usr/sub:SAPLSPO5:0101/radSPOPLI-SELFLAG[1,0]").setFocus
 session.findById("wnd[1]").sendVKey 0

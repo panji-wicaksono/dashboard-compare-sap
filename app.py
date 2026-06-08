@@ -425,8 +425,16 @@ def _run_automation(date_dmy, date_iso):
             raise RuntimeError(f"Login SAP gagal (exit code {result.returncode}). Periksa kredensial di file .env dan pastikan SAP Logon sudah terbuka.")
         log("Login SAP berhasil")
 
-        # 1. Download CAUFV (filter GSTRP = tanggal dipilih, format DD.MM.YYYY)
-        subprocess.run(["wscript", os.path.join(macro_dir, "caufv.vbs"), date_dmy], check=True)
+        def run_macro(script_name, args, no_data_msg):
+            r = subprocess.run(["wscript", os.path.join(macro_dir, script_name)] + args)
+            if r.returncode == 3:
+                raise RuntimeError(f"Tidak ada data: {no_data_msg}")
+            if r.returncode != 0:
+                raise RuntimeError(f"Macro {script_name} gagal (exit code {r.returncode})")
+
+        # 1. Download CAUFV
+        run_macro("caufv.vbs", [date_dmy],
+                  f"CAUFV tidak ada data untuk tanggal {date_dmy}. Periksa filter tanggal di SAP.")
         log(f"CAUFV didownload ({date_dmy})")
 
         # 2. Baca AUFNR dari caufv.xls → salin ke clipboard
@@ -436,12 +444,14 @@ def _run_automation(date_dmy, date_iso):
         subprocess.run("clip", input=aufnr_str.encode("utf-8"), shell=True, check=True)
         log(f"{len(aufnr_list)} AUFNR disalin ke clipboard")
 
-        # 3. Download AUFM (menggunakan clipboard AUFNR)
-        subprocess.run(["wscript", os.path.join(macro_dir, "aufm.vbs")], check=True)
+        # 3. Download AUFM
+        run_macro("aufm.vbs", [],
+                  "AUFM tidak ada data untuk order yang dipilih dari CAUFV.")
         log("AUFM didownload dari SAP")
 
-        # 4. Download ZPPCPFINT_GRAUTO (filter date = YYYY-MM-DD*)
-        subprocess.run(["wscript", os.path.join(macro_dir, "zppcpfint_grauto.vbs"), date_iso + "*"], check=True)
+        # 4. Download ZPPCPFINT_GRAUTO
+        run_macro("zppcpfint_grauto.vbs", [date_iso + "*"],
+                  f"Prodsys (ZPPCPFINT_GRAUTO) tidak ada data untuk tanggal {date_iso}.")
         log(f"ZPPCPFINT_GRAUTO didownload ({date_iso})")
 
         # 5. Hapus data lama untuk tanggal ini, lalu insert fresh
