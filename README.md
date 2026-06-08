@@ -10,7 +10,7 @@ Rekonsiliasi dilakukan antara:
 - **SAP**: data goods receipt movement type **531** (by-product), **888** (main product), dikurangi pembatalan **532** / **889**
 - **Prodsys**: data dari sistem eksternal, bersumber dari table `ZPPCPFINT_GRAUTO`
 
-Dashboard memungkinkan operator mengupload data export SAP dan Prodsys, lalu sistem menghitung selisih qty per order / material secara otomatis.
+Dashboard memungkinkan operator men-download data SAP secara otomatis via macro, atau mengupload file export secara manual, lalu sistem menghitung selisih qty per order / material secara otomatis.
 
 Akses internal: `http://10.204.10.32:8000`
 
@@ -23,8 +23,9 @@ Akses internal: `http://10.204.10.32:8000`
 | Backend   | Python 3 + Flask 3.x              |
 | Database  | SQLite (`dashboard.db`)           |
 | Frontend  | HTML / CSS / JavaScript (vanilla) |
-| File      | Excel (.xlsx/.xls) atau CSV       |
+| File      | Excel (.xlsx/.xls) atau CSV (tab-separated) |
 | Export    | openpyxl (styled Excel)           |
+| Automasi  | SAP GUI Scripting (VBScript)      |
 
 ---
 
@@ -51,24 +52,83 @@ New-NetFirewallRule -DisplayName "Dashboard SAP port 8000" `
 
 ---
 
+## Setup Kredensial SAP (`.env`)
+
+Untuk fitur automasi SAP macro, buat file `.env` di root project dengan isi:
+
+```
+SAP_CLIENT=100
+SAP_USER=username_sap_anda
+SAP_PASS=password_sap_anda
+SAP_SYSTEM=nama_sistem_di_sap_logon
+```
+
+Lihat `.env.example` sebagai template. File `.env` **tidak di-commit ke git** (ada di `.gitignore`), sehingga kredensial tidak tersimpan di repository.
+
+> SAP Logon harus sudah terpasang dan terdaftar sistem SAP-nya. Program akan login otomatis saat automasi dijalankan.
+
+---
+
+## Deployment ke PC Server (Git Workflow)
+
+Program berjalan di PC server. Setiap ada perubahan dari laptop developer, deploy ke server dengan:
+
+```bash
+# Di PC server (sekali saja — setup awal)
+git clone https://github.com/panji-wicaksono/dashboard-compare-sap.git
+
+# Di PC server (setiap ada update)
+git pull origin main
+
+# Restart Flask setelah pull
+python app.py
+```
+
+Repository bersifat public, sehingga `git pull` tidak memerlukan kredensial GitHub.
+
+---
+
 ## Alur Penggunaan
 
+Ada dua cara mengisi data: **otomatis via SAP Macro** (direkomendasikan) atau **manual upload**.
+
+### Mode 1 — Otomatis via SAP Macro
+
 1. Buka dashboard → tab **Upload Data**
-2. Upload 4 file export SAP/Prodsys (urutan bebas, data lama tidak dihapus)
-3. Pindah ke tab **Perbandingan**
-4. Pilih **Tanggal Mulai Produksi (GSTRP)** lalu klik **Tampilkan**
-5. Gunakan filter status / search untuk menyaring data
-6. Klik **Export Excel** untuk mengunduh hasil
+2. Di bagian **⚡ Upload via SAP Macro**, pilih tanggal download
+3. Klik **▶ Jalankan Automasi**
+4. Program akan otomatis:
+   - Login ke SAP
+   - Download CAUFV → ekstrak Production Order → download AUFM → download ZPPCPFINT_GRAUTO
+   - Upload semua data ke database
+5. Pantau progress real-time di log yang muncul di UI
+6. Setelah selesai, pindah ke tab **Perbandingan**
+
+> Jika data untuk tanggal yang sama sudah ada, data lama **akan diganti** dengan data terbaru (bukan ditambahkan).
+
+### Mode 2 — Manual Upload
+
+1. Export masing-masing tabel dari SAP/Prodsys ke file .xlsx atau .xls
+2. Buka dashboard → tab **Upload Data**
+3. Upload file AUFM, CAUFV, MAKT, dan Prodsys secara terpisah
+4. Pindah ke tab **Perbandingan**
+
+### Melihat Hasil Perbandingan
+
+1. Di tab **Perbandingan**, tanggal terbaru yang ada datanya otomatis terpilih
+2. Pilih tanggal lain jika perlu, lalu klik **Tampilkan**
+3. Gunakan filter status / search untuk menyaring data
+4. Klik **Export Excel** untuk mengunduh hasil
 
 ---
 
 ## Upload Data
 
-Data diupload per tabel. Upload bersifat **upsert**: jika data sudah ada (berdasarkan primary key SAP), baris baru diabaikan. Data lama tidak dihapus.
+Data diupload per tabel. Upload file manual bersifat **upsert**: jika data sudah ada (berdasarkan primary key SAP), baris baru diabaikan. Upload via macro untuk tanggal yang sama akan **mengganti** data lama.
 
 ### AUFM — Goods Receipt SAP
 
-Export dari SAP (tcode COOIS / MB51). Kolom wajib:
+Export dari SAP (table AUFM via SE16). Kolom wajib:
 
 | Kolom   | Keterangan                              |
 |---------|-----------------------------------------|
@@ -84,7 +144,7 @@ Export dari SAP (tcode COOIS / MB51). Kolom wajib:
 | BLDAT   | Tanggal posting (format DD.MM.YYYY)     |
 | WERKS   | Plant                                   |
 
-Kolom opsional (digunakan jika tersedia):
+Kolom opsional:
 
 | Kolom | Keterangan                      |
 |-------|---------------------------------|
@@ -96,7 +156,7 @@ Kolom opsional (digunakan jika tersedia):
 
 ### CAUFV — Production Order Header
 
-Export dari SAP (table CAUFV). Kolom wajib:
+Export dari SAP (table CAUFV via SE16). Kolom wajib:
 
 | Kolom | Keterangan                          |
 |-------|-------------------------------------|
@@ -116,7 +176,7 @@ Kolom opsional:
 
 ### MAKT — Deskripsi Material
 
-Export dari SAP (table MAKT). Kolom wajib:
+Export dari SAP (table MAKT via SE16). Kolom wajib:
 
 | Kolom | Keterangan           |
 |-------|----------------------|
@@ -129,7 +189,7 @@ Export dari SAP (table MAKT). Kolom wajib:
 
 ### Prodsys — Data ZPPCPFINT_GRAUTO
 
-Export dari sistem Prodsys. Kolom wajib:
+Export dari sistem Prodsys (table ZPPCPFINT_GRAUTO via SE16). Kolom wajib:
 
 | Kolom       | Keterangan                                          |
 |-------------|-----------------------------------------------------|
@@ -194,6 +254,8 @@ Selisih = **Qty SAP − Qty Prodsys**
 | Hanya ada di SAP            | Merah muda    | `HANYA DI SAP`        |
 | Hanya ada di Prodsys        | Kuning        | `HANYA DI PRODSYS`    |
 
+Toleransi MATCH: `|Qty SAP − Qty Prodsys| < 0.01`
+
 ---
 
 ## Kolom Output Dashboard
@@ -220,14 +282,24 @@ Tabel menampilkan **subtotal per production order** (baris abu-abu) yang merangk
 
 ```
 dashboard-compare-sap/
-├── app.py                    # Backend Flask + SQLite
+├── app.py                        # Backend Flask + SQLite
 ├── templates/
-│   └── index.html            # Frontend (single page)
-├── dashboard.db              # Database SQLite (auto-create)
-├── requirements.txt          # Dependencies Python
-├── run_program.bat           # Shortcut jalankan server (Windows)
-├── Contoh AUFM.xlsx          # Contoh file export SAP AUFM
-├── Contoh CAUFV.xlsx         # Contoh file export SAP CAUFV
-├── Contoh MAKT.xlsx          # Contoh file export SAP MAKT
-└── Contoh ZPPCPFINT_GRAUTO.xlsx  # Contoh file export Prodsys
+│   └── index.html                # Frontend (single page)
+├── static/
+│   └── favicon.svg               # Icon browser tab
+├── macro sap/
+│   ├── sap_login.vbs             # Login SAP otomatis (baca kredensial dari .env)
+│   ├── caufv.vbs                 # Download table CAUFV dari SAP
+│   ├── aufm.vbs                  # Download table AUFM dari SAP
+│   └── zppcpfint_grauto.vbs      # Download table ZPPCPFINT_GRAUTO dari SAP
+├── data upload/                  # File hasil download macro (tidak di-commit)
+│   ├── caufv.xls
+│   ├── aufm.xls
+│   └── zppcpfint_grauto.xls
+├── .env                          # Kredensial SAP (TIDAK di-commit, ada di .gitignore)
+├── .env.example                  # Template .env (di-commit sebagai panduan)
+├── .gitignore
+├── dashboard.db                  # Database SQLite (auto-create, tidak di-commit)
+├── requirements.txt              # Dependencies Python
+└── run_program.bat               # Shortcut jalankan server (Windows)
 ```

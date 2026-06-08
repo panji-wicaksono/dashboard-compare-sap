@@ -409,9 +409,26 @@ def upload_prodsys():
 
 # ── Automation ─────────────────────────────────────────────────────────────────
 
+def _read_env(key):
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    try:
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                if k.strip() == key:
+                    return v.strip()
+    except OSError:
+        pass
+    return ""
+
+
 def _run_automation(date_dmy, date_iso):
     macro_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "macro sap")
     data_dir  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data upload")
+    sap_user  = _read_env("SAP_USER")
 
     def log(msg):
         _auto["log"].append(msg)
@@ -420,7 +437,7 @@ def _run_automation(date_dmy, date_iso):
         # 0. Login SAP
         result = subprocess.run(["wscript", "/B", os.path.join(macro_dir, "sap_login.vbs")])
         if result.returncode == 2:
-            raise RuntimeError("Login SAP gagal: user sedang dipakai di sesi lain. Tutup sesi SAP yang aktif lalu coba lagi.")
+            raise RuntimeError(f"Login SAP gagal: user {sap_user} sedang dipakai")
         if result.returncode != 0:
             raise RuntimeError(f"Login SAP gagal (exit code {result.returncode}). Periksa kredensial di file .env dan pastikan SAP Logon sudah terbuka.")
         log("Login SAP berhasil")
