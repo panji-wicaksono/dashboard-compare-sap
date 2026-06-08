@@ -62,6 +62,20 @@ End If
 
 Set session = connection.Children(0)
 
+' ── Tangani dialog auto-logout sebelum cek status login ───────────────────────
+' Dialog "P01: auto logout" muncul di wnd[1] saat session idle.
+' Harus klik No dulu — setelah itu session kembali ke login screen.
+On Error Resume Next
+Dim autoLogoutWnd : Set autoLogoutWnd = session.findById("wnd[1]")
+If Err.Number = 0 Then
+    Dim wndTitle : wndTitle = LCase(autoLogoutWnd.text)
+    If InStr(wndTitle, "auto") > 0 Or InStr(wndTitle, "logout") > 0 Or InStr(wndTitle, "idle") > 0 Then
+        autoLogoutWnd.sendVKey 12  ' No — tutup dialog, session kembali ke login screen
+        WScript.Sleep 1500
+    End If
+End If
+Err.Clear : On Error GoTo 0
+
 ' ── Cek apakah sudah login (layar utama) atau masih di login screen ────────────
 Dim onLoginScreen : onLoginScreen = False
 On Error Resume Next
@@ -71,14 +85,7 @@ Err.Clear
 On Error GoTo 0
 
 If Not onLoginScreen Then
-    ' Tutup dialog auto-logout / idle warning jika ada sebelum lanjut
-    On Error Resume Next
-    Dim warnDlg : Set warnDlg = session.findById("wnd[1]")
-    If Err.Number = 0 Then
-        warnDlg.sendVKey 0  ' Enter = Continue / OK
-        WScript.Sleep 1000
-    End If
-    Err.Clear : On Error GoTo 0
+    ' Sudah login, tidak ada popup — langsung lanjut
     WScript.Quit 0
 End If
 
