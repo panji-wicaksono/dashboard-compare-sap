@@ -63,16 +63,23 @@ End If
 Set session = connection.Children(0)
 
 ' ── Tangani dialog auto-logout sebelum cek status login ───────────────────────
-' Dialog "SAP GUI for Windows 740" / "P01: auto logout" muncul di wnd[1].
-' Judul window bervariasi, jadi langsung dismiss wnd[1] apapun judulnya.
-' Klik No ("Do you want to see the detailed error description?" → No).
-On Error Resume Next
-Dim autoLogoutWnd : Set autoLogoutWnd = session.findById("wnd[1]")
-If Err.Number = 0 Then
-    autoLogoutWnd.sendVKey 12  ' No — tutup dialog, session kembali ke login screen
-    WScript.Sleep 1500
-End If
-Err.Clear : On Error GoTo 0
+' "SAP GUI for Windows 740: P01: auto logout" adalah dialog Windows milik SAP
+' GUI client, bukan ABAP popup — tidak bisa dikontrol via session.sendVKey.
+' Gunakan WScript.Shell.AppActivate + SendKeys untuk klik No.
+Dim wshDlg : Set wshDlg = CreateObject("WScript.Shell")
+Dim dlgAttempt : dlgAttempt = 0
+Do While dlgAttempt < 5
+    If wshDlg.AppActivate("SAP GUI for Windows") Then
+        WScript.Sleep 400
+        wshDlg.SendKeys "n"   ' tombol No
+        WScript.Sleep 600
+        dlgAttempt = dlgAttempt + 1
+    Else
+        dlgAttempt = 5        ' tidak ada dialog, keluar loop
+    End If
+Loop
+Set wshDlg = Nothing
+WScript.Sleep 1000
 
 ' ── Cek apakah sudah login (layar utama) atau masih di login screen ────────────
 Dim onLoginScreen : onLoginScreen = False
