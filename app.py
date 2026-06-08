@@ -664,6 +664,10 @@ def compare():
 
             merged["status"] = merged.apply(status, axis=1)
 
+            # Sembunyikan baris di mana qty SAP dan qty Prodsys keduanya 0
+            # (terjadi karena GR SAP sudah di-cancel sehingga net qty = 0)
+            merged = merged[(merged["qty_sap"] != 0) | (merged["qty_prd"] != 0)]
+
             ord_ = {"SAP LEBIH BESAR":0,"PRODSYS LEBIH BESAR":1,"HANYA DI SAP":2,"HANYA DI PRODSYS":3,"MATCH":4}
             merged["_o"] = merged["status"].map(ord_)
             merged.sort_values(["_o","AUFNR","MATNR"], inplace=True)
