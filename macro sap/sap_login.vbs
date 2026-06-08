@@ -63,16 +63,14 @@ End If
 Set session = connection.Children(0)
 
 ' ── Tangani dialog auto-logout sebelum cek status login ───────────────────────
-' Dialog "P01: auto logout" muncul di wnd[1] saat session idle.
-' Harus klik No dulu — setelah itu session kembali ke login screen.
+' Dialog "SAP GUI for Windows 740" / "P01: auto logout" muncul di wnd[1].
+' Judul window bervariasi, jadi langsung dismiss wnd[1] apapun judulnya.
+' Klik No ("Do you want to see the detailed error description?" → No).
 On Error Resume Next
 Dim autoLogoutWnd : Set autoLogoutWnd = session.findById("wnd[1]")
 If Err.Number = 0 Then
-    Dim wndTitle : wndTitle = LCase(autoLogoutWnd.text)
-    If InStr(wndTitle, "auto") > 0 Or InStr(wndTitle, "logout") > 0 Or InStr(wndTitle, "idle") > 0 Then
-        autoLogoutWnd.sendVKey 12  ' No — tutup dialog, session kembali ke login screen
-        WScript.Sleep 1500
-    End If
+    autoLogoutWnd.sendVKey 12  ' No — tutup dialog, session kembali ke login screen
+    WScript.Sleep 1500
 End If
 Err.Clear : On Error GoTo 0
 
