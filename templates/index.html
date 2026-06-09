@@ -209,11 +209,9 @@ tbody tr:hover{filter:brightness(.97)}
     <div class="compare-toolbar">
       <div class="field">
         <span class="lbl">Tanggal Prod. Order</span>
-        <select id="date-sel" onchange="loadCompare()">
-          <option value="">-- Pilih tanggal --</option>
-        </select>
+        <input type="date" id="date-sel" onchange="loadCompare()">
       </div>
-      <button class="btn btn-outline btn-sm" onclick="refreshDates()" title="Refresh daftar tanggal">&#8635; Refresh</button>
+      <button class="btn btn-outline btn-sm" onclick="refreshDates()" title="Set ke tanggal terbaru">&#8635; Terbaru</button>
       <div style="flex:1"></div>
       <button class="btn btn-success btn-sm" id="btn-export" onclick="doExport()" disabled>&#11015; Export Excel</button>
     </div>
@@ -564,23 +562,13 @@ async function refreshDates() {
   try {
     const res = await fetch('/api/dates');
     const d = await res.json();
-    const sel = document.getElementById('date-sel');
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">-- Pilih tanggal --</option>';
-    (d.dates || []).forEach(dt => {
-      const o = document.createElement('option');
-      o.value = dt;
-      o.textContent = formatDate(dt);
-      sel.appendChild(o);
-    });
-    if (prev && d.dates && d.dates.includes(prev)) {
-      sel.value = prev;
-    } else if (d.dates && d.dates.length) {
-      sel.value = d.dates[0];
+    if (d.dates && d.dates.length) {
+      document.getElementById('date-sel').value = d.dates[0];
       loadCompare();
+      clearInfo();
+    } else {
+      showInfo('Belum ada data Prodsys. Upload file terlebih dahulu di menu Upload Data.');
     }
-    if (!d.dates || !d.dates.length) showInfo('Belum ada data Prodsys. Upload file terlebih dahulu di menu Upload Data.');
-    else clearInfo();
   } catch(e) { showErr('Gagal memuat daftar tanggal: ' + e.message); }
 }
 
