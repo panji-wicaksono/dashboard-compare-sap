@@ -71,11 +71,17 @@ Dim dlgAttempt : dlgAttempt = 0
 Do While dlgAttempt < 5
     If wshDlg.AppActivate("SAP GUI for Windows 740") Then
         WScript.Sleep 400
-        wshDlg.SendKeys "n"   ' tombol No
-        WScript.Sleep 600
+        wshDlg.SendKeys "n"           ' coba tombol No (dialog Yes/No)
+        WScript.Sleep 400
+        ' Jika dialog masih ada setelah "n", berarti dialog hanya punya OK
+        If wshDlg.AppActivate("SAP GUI for Windows 740") Then
+            WScript.Sleep 200
+            wshDlg.SendKeys "{ENTER}" ' tekan OK untuk dialog OK-only
+            WScript.Sleep 400
+        End If
         dlgAttempt = dlgAttempt + 1
     Else
-        dlgAttempt = 5        ' tidak ada dialog, keluar loop
+        dlgAttempt = 5                ' tidak ada dialog lagi, keluar loop
     End If
 Loop
 Set wshDlg = Nothing
