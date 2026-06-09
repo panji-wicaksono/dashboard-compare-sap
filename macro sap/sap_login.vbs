@@ -66,6 +66,7 @@ Set session = connection.Children(0)
 ' "SAP GUI for Windows 740: P01: auto logout" adalah dialog Windows milik SAP
 ' GUI client, bukan ABAP popup — tidak bisa dikontrol via session.sendVKey.
 ' Gunakan WScript.Shell.AppActivate + SendKeys untuk klik No.
+Dim closedDialog : closedDialog = False
 Dim wshDlg : Set wshDlg = CreateObject("WScript.Shell")
 Dim dlgAttempt : dlgAttempt = 0
 Do While dlgAttempt < 5
@@ -79,13 +80,24 @@ Do While dlgAttempt < 5
             wshDlg.SendKeys "{ENTER}" ' tekan OK untuk dialog OK-only
             WScript.Sleep 400
         End If
+        closedDialog = True
         dlgAttempt = dlgAttempt + 1
     Else
         dlgAttempt = 5                ' tidak ada dialog lagi, keluar loop
     End If
 Loop
 Set wshDlg = Nothing
-WScript.Sleep 1000
+
+If closedDialog Then
+    ' SAP perlu waktu untuk tampilkan login screen setelah session di-terminate.
+    ' Re-acquire session agar tidak pakai object lama yang sudah stale.
+    WScript.Sleep 2500
+    On Error Resume Next
+    Set session = connection.Children(0)
+    Err.Clear : On Error GoTo 0
+Else
+    WScript.Sleep 500
+End If
 
 ' ── Cek apakah sudah login (layar utama) atau masih di login screen ────────────
 Dim onLoginScreen : onLoginScreen = False
