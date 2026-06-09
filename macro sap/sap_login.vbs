@@ -89,12 +89,22 @@ Loop
 Set wshDlg = Nothing
 
 If closedDialog Then
-    ' SAP perlu waktu untuk tampilkan login screen setelah session di-terminate.
-    ' Re-acquire session agar tidak pakai object lama yang sudah stale.
-    WScript.Sleep 2500
-    On Error Resume Next
-    Set session = connection.Children(0)
-    Err.Clear : On Error GoTo 0
+    ' Setelah auto-logout, SAP terminate session lama dan tampilkan login screen.
+    ' Sleep tetap tidak cukup — poll setiap 500ms sampai login screen benar-benar
+    ' muncul (max 15 detik), sambil selalu re-acquire session agar tidak stale.
+    Dim loginVisible : loginVisible = False
+    Dim pollCount    : pollCount    = 0
+    Do While Not loginVisible And pollCount < 30
+        WScript.Sleep 500
+        If connection.Children.Count > 0 Then
+            On Error Resume Next
+            Set session = connection.Children(0)
+            Dim fldPoll : Set fldPoll = session.findById("wnd[0]/usr/txtRSYST-MANDT")
+            If Err.Number = 0 Then loginVisible = True
+            Err.Clear : On Error GoTo 0
+        End If
+        pollCount = pollCount + 1
+    Loop
 Else
     WScript.Sleep 500
 End If

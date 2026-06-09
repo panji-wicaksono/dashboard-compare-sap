@@ -580,6 +580,86 @@ def get_dates():
         return jsonify({"error": str(e)}), 500
 
 
+def _compare_rows(date_str, conn):
+    """Comparison logic for a single GSTRP date. Returns list of row dicts."""
+    sap_df = pd.read_sql_query(
+        """
+        SELECT m.AUFNR, m.MATNR,
+               SUM(CASE WHEN m.BWART IN ('531','888') THEN m.MENGE ELSE -m.MENGE END) AS qty_sap,
+               MAX(m.MEINS)              AS meins,
+               MAX(m.WERKS)              AS werks,
+               MAX(COALESCE(c.AUART,'')) AS auart
+        FROM aufm m
+        LEFT JOIN caufv c ON m.AUFNR = c.AUFNR
+        WHERE m.BWART IN ('531','532','888','889')
+          AND (m.LGORT IS NULL OR m.LGORT != 'SHUV')
+          AND m.AUFNR IN (
+              SELECT DISTINCT AUFNR FROM prodsys WHERE GSTRP = :dt
+              UNION
+              SELECT DISTINCT AUFNR FROM caufv WHERE GSTRP = :dt
+          )
+        GROUP BY m.AUFNR, m.MATNR
+        """,
+        conn, params={"dt": date_str},
+    )
+
+    prd_df = pd.read_sql_query(
+        """
+        SELECT AUFNR, MATNR,
+               SUM(CONVM)  AS qty_prd,
+               MAX(MEINS)  AS meins,
+               MAX(WERKS)  AS werks,
+               MAX(AUART)  AS auart,
+               SUM(ZDATA1) AS cnt
+        FROM prodsys
+        WHERE GSTRP = :dt
+        GROUP BY AUFNR, MATNR
+        """,
+        conn, params={"dt": date_str},
+    )
+
+    if sap_df.empty and prd_df.empty:
+        return []
+
+    merged = pd.merge(sap_df, prd_df, on=["AUFNR", "MATNR"], how="outer", suffixes=("_s", "_p"))
+    merged["qty_sap"] = merged["qty_sap"].fillna(0).round(3)
+    merged["qty_prd"] = merged["qty_prd"].fillna(0).round(3)
+    merged["cnt"]     = merged["cnt"].fillna(0).astype(int)
+    auart_s = merged.get("auart_s", merged.get("auart", ""))
+    auart_p = merged.get("auart_p", pd.Series([""] * len(merged)))
+    merged["auart"] = auart_s.replace("", None).fillna(auart_p).fillna("")
+    merged["werks"] = merged["werks_s"].fillna(merged["werks_p"]).fillna("")
+    merged["meins"] = merged["meins_s"].fillna(merged["meins_p"]).fillna("")
+    drop_cols = [c for c in ["auart_s","auart_p","werks_s","werks_p","meins_s","meins_p"] if c in merged.columns]
+    if drop_cols:
+        merged.drop(columns=drop_cols, inplace=True)
+
+    matnrs = tuple(merged["MATNR"].dropna().unique().tolist())
+    if matnrs:
+        ph = ",".join(["?"] * len(matnrs))
+        makt_rows = conn.execute(f"SELECT MATNR, MAKTX FROM makt WHERE MATNR IN ({ph})", matnrs).fetchall()
+        makt_map = {r["MATNR"]: r["MAKTX"] for r in makt_rows}
+        merged["maktx"] = merged["MATNR"].map(makt_map).fillna("")
+    else:
+        merged["maktx"] = ""
+
+    merged["selisih"] = (merged["qty_sap"] - merged["qty_prd"]).round(3)
+
+    def _status(row):
+        s, has_s, has_p = row["selisih"], row["qty_sap"] != 0, row["qty_prd"] != 0
+        if not has_s and has_p: return "HANYA DI PRODSYS"
+        if has_s and not has_p: return "HANYA DI SAP"
+        if abs(s) < 0.01:      return "MATCH"
+        return "SAP LEBIH BESAR" if s > 0 else "PRODSYS LEBIH BESAR"
+
+    merged["status"] = merged.apply(_status, axis=1)
+    merged = merged[(merged["qty_sap"] != 0) | (merged["qty_prd"] != 0)]
+
+    out = ["AUFNR","MATNR","maktx","auart","werks","meins","qty_sap","qty_prd","cnt","selisih","status"]
+    out = [c for c in out if c in merged.columns]
+    return merged[out].fillna("").to_dict("records")
+
+
 @app.route("/api/compare")
 def compare():
     date = request.args.get("date", "").strip()
@@ -588,113 +668,90 @@ def compare():
 
     try:
         with get_db() as conn:
-            # SAP: AUFM untuk order yang ada di Prodsys pada GSTRP tersebut.
-            # Filter by AUFNR (bukan BLDAT) karena tanggal posting SAP bisa berbeda dgn GSTRP.
-            # 531/888 = GR (positive), 532/889 = cancellation (dikurangi)
-            sap_df = pd.read_sql_query(
-                """
-                SELECT m.AUFNR, m.MATNR,
-                       SUM(CASE WHEN m.BWART IN ('531','888') THEN m.MENGE ELSE -m.MENGE END) AS qty_sap,
-                       MAX(m.MEINS)              AS meins,
-                       MAX(m.WERKS)              AS werks,
-                       MAX(COALESCE(c.AUART,'')) AS auart
-                FROM aufm m
-                LEFT JOIN caufv c ON m.AUFNR = c.AUFNR
-                WHERE m.BWART IN ('531','532','888','889')
-                  AND (m.LGORT IS NULL OR m.LGORT != 'SHUV')
-                  AND m.AUFNR IN (
-                      SELECT DISTINCT AUFNR FROM prodsys WHERE GSTRP = :dt
-                      UNION
-                      SELECT DISTINCT AUFNR FROM caufv WHERE GSTRP = :dt
-                  )
-                GROUP BY m.AUFNR, m.MATNR
-                """,
-                conn, params={"dt": date},
-            )
+            rows = _compare_rows(date, conn)
 
-            # Prodsys: filter by GSTRP (tanggal mulai produksi)
-            prd_df = pd.read_sql_query(
-                """
-                SELECT AUFNR, MATNR,
-                       SUM(CONVM)  AS qty_prd,
-                       MAX(MEINS)  AS meins,
-                       MAX(WERKS)  AS werks,
-                       MAX(AUART)  AS auart,
-                       SUM(ZDATA1) AS cnt
-                FROM prodsys
-                WHERE GSTRP = :dt
-                GROUP BY AUFNR, MATNR
-                """,
-                conn, params={"dt": date},
-            )
-
-            if sap_df.empty and prd_df.empty:
+            if not rows:
                 return jsonify({"data": [], "summary": {
                     "total": 0, "match": 0, "sap_lebih": 0,
                     "prodsys_lebih": 0, "hanya_sap": 0, "hanya_prodsys": 0,
                 }})
 
-            # Full outer join via pandas
-            merged = pd.merge(sap_df, prd_df, on=["AUFNR", "MATNR"], how="outer", suffixes=("_s", "_p"))
-            merged["qty_sap"] = merged["qty_sap"].fillna(0).round(3)
-            merged["qty_prd"] = merged["qty_prd"].fillna(0).round(3)
-            merged["cnt"]     = merged["cnt"].fillna(0).astype(int)
-            # AUART: prefer CAUFV (via SAP side), fallback to Prodsys side
-            auart_s = merged.get("auart_s", merged.get("auart", ""))
-            auart_p = merged.get("auart_p", pd.Series([""] * len(merged)))
-            merged["auart"] = auart_s.replace("", None).fillna(auart_p).fillna("")
-            merged["werks"] = merged["werks_s"].fillna(merged["werks_p"]).fillna("")
-            merged["meins"] = merged["meins_s"].fillna(merged["meins_p"]).fillna("")
-            drop_cols = [c for c in ["auart_s","auart_p","werks_s","werks_p","meins_s","meins_p"] if c in merged.columns]
-            if drop_cols:
-                merged.drop(columns=drop_cols, inplace=True)
-
-            # Lookup material descriptions
-            matnrs = tuple(merged["MATNR"].dropna().unique().tolist())
-            if matnrs:
-                ph = ",".join(["?"] * len(matnrs))
-                makt_rows = conn.execute(f"SELECT MATNR, MAKTX FROM makt WHERE MATNR IN ({ph})", matnrs).fetchall()
-                makt_map = {r["MATNR"]: r["MAKTX"] for r in makt_rows}
-                merged["maktx"] = merged["MATNR"].map(makt_map).fillna("")
-            else:
-                merged["maktx"] = ""
-
-            # Selisih & status (SAP positive, Prodsys positive → selisih = SAP - Prodsys)
-            merged["selisih"] = (merged["qty_sap"] - merged["qty_prd"]).round(3)
-
-            def status(row):
-                s, has_s, has_p = row["selisih"], row["qty_sap"] != 0, row["qty_prd"] != 0
-                if not has_s and has_p: return "HANYA DI PRODSYS"
-                if has_s and not has_p: return "HANYA DI SAP"
-                if abs(s) < 0.01:      return "MATCH"
-                return "SAP LEBIH BESAR" if s > 0 else "PRODSYS LEBIH BESAR"
-
-            merged["status"] = merged.apply(status, axis=1)
-
-            # Sembunyikan baris di mana qty SAP dan qty Prodsys keduanya 0
-            # (terjadi karena GR SAP sudah di-cancel sehingga net qty = 0)
-            merged = merged[(merged["qty_sap"] != 0) | (merged["qty_prd"] != 0)]
-
             ord_ = {"SAP LEBIH BESAR":0,"PRODSYS LEBIH BESAR":1,"HANYA DI SAP":2,"HANYA DI PRODSYS":3,"MATCH":4}
-            merged["_o"] = merged["status"].map(ord_)
-            merged.sort_values(["_o","AUFNR","MATNR"], inplace=True)
-            merged.drop("_o", axis=1, inplace=True)
+            rows.sort(key=lambda r: (ord_.get(r["status"], 5), r["AUFNR"], r["MATNR"]))
 
-            out = ["AUFNR","MATNR","maktx","auart","werks","meins","qty_sap","qty_prd","cnt","selisih","status"]
-            out = [c for c in out if c in merged.columns]
-            result = merged[out].fillna("")
-
-            st = merged["status"]
+            st = [r["status"] for r in rows]
             summary = {
-                "total":         len(result),
-                "match":         int((st=="MATCH").sum()),
-                "sap_lebih":     int((st=="SAP LEBIH BESAR").sum()),
-                "prodsys_lebih": int((st=="PRODSYS LEBIH BESAR").sum()),
-                "hanya_sap":     int((st=="HANYA DI SAP").sum()),
-                "hanya_prodsys": int((st=="HANYA DI PRODSYS").sum()),
+                "total":         len(rows),
+                "match":         st.count("MATCH"),
+                "sap_lebih":     st.count("SAP LEBIH BESAR"),
+                "prodsys_lebih": st.count("PRODSYS LEBIH BESAR"),
+                "hanya_sap":     st.count("HANYA DI SAP"),
+                "hanya_prodsys": st.count("HANYA DI PRODSYS"),
             }
 
-            return jsonify({"data": result.to_dict("records"), "summary": summary})
+            return jsonify({"data": rows, "summary": summary})
+
+    except Exception as e:
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
+@app.route("/api/analyze")
+def analyze():
+    try:
+        from datetime import timedelta
+        from_date = request.args.get("from", "").strip()
+        to_date   = request.args.get("to",   "").strip()
+        if not from_date:
+            from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not to_date:
+            to_date = datetime.now().strftime("%Y-%m-%d")
+
+        with get_db() as conn:
+            dates = [r[0] for r in conn.execute(
+                "SELECT DISTINCT GSTRP FROM prodsys WHERE GSTRP IS NOT NULL AND GSTRP >= ? AND GSTRP <= ? ORDER BY GSTRP",
+                (from_date, to_date)
+            ).fetchall()]
+
+            if not dates:
+                return jsonify({"dates_analyzed": 0, "date_min": None, "date_max": None, "rows": []})
+
+            _empty_detail = lambda: {"MATCH": [], "SAP LEBIH BESAR": [], "PRODSYS LEBIH BESAR": [], "HANYA DI SAP": [], "HANYA DI PRODSYS": []}
+            agg = {}
+            for d in dates:
+                for row in _compare_rows(d, conn):
+                    matnr = row["MATNR"]
+                    if matnr not in agg:
+                        agg[matnr] = {
+                            "matnr": matnr, "maktx": row["maktx"],
+                            "total": 0, "cnt_match": 0, "cnt_sap": 0,
+                            "cnt_prd": 0, "cnt_only_sap": 0, "cnt_only_prd": 0,
+                            "detail": _empty_detail(),
+                        }
+                    a = agg[matnr]
+                    a["total"] += 1
+                    s = row["status"]
+                    a["detail"][s].append(d)
+                    if s == "MATCH":                 a["cnt_match"] += 1
+                    elif s == "SAP LEBIH BESAR":     a["cnt_sap"] += 1
+                    elif s == "PRODSYS LEBIH BESAR": a["cnt_prd"] += 1
+                    elif s == "HANYA DI SAP":        a["cnt_only_sap"] += 1
+                    elif s == "HANYA DI PRODSYS":    a["cnt_only_prd"] += 1
+
+            result = []
+            for a in agg.values():
+                a["non_match"] = a["total"] - a["cnt_match"]
+                a["pct_match"] = round(a["cnt_match"] / a["total"] * 100, 1) if a["total"] > 0 else 0.0
+                a["detail"] = {k: v for k, v in a["detail"].items() if v}
+                result.append(a)
+
+            result.sort(key=lambda r: (-r["non_match"], -r["total"]))
+
+            return jsonify({
+                "dates_analyzed": len(dates),
+                "date_min": dates[0],
+                "date_max": dates[-1],
+                "rows": result,
+            })
 
     except Exception as e:
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500

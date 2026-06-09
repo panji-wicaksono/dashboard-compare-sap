@@ -157,6 +157,14 @@ tbody tr:hover{filter:brightness(.97)}
 
 .hidden{display:none!important}
 
+/* ── PAGE: ANALISA ── */
+.sort-th{cursor:pointer!important}
+.sort-th:hover{background:#0D47A1!important}
+.sort-ico{font-size:10px;opacity:.8;margin-left:2px}
+.anl-row-ok{background:#F1F8F1}
+.anl-row-bad{background:#FFF5EE}
+.anl-dash{color:#bbb}
+
 @media(max-width:800px){
   .sum-grid{grid-template-columns:repeat(3,1fr)}
   .upload-grid{grid-template-columns:1fr}
@@ -175,6 +183,9 @@ tbody tr:hover{filter:brightness(.97)}
   <div class="nav-tabs">
     <button class="nav-tab active" id="tab-compare" onclick="switchTab('compare')">
       <span class="ico">📊</span> Perbandingan
+    </button>
+    <button class="nav-tab" id="tab-analisa" onclick="switchTab('analisa')">
+      <span class="ico">🔍</span> Analisa
     </button>
     <button class="nav-tab" id="tab-upload" onclick="switchTab('upload')">
       <span class="ico">📂</span> Upload Data
@@ -437,28 +448,115 @@ tbody tr:hover{filter:brightness(.97)}
   </div><!-- /upload-grid -->
 </div><!-- /page-upload -->
 
+<!-- ════════════════════════════════════════════
+     PAGE: ANALISA
+════════════════════════════════════════════ -->
+<div id="page-analisa" class="hidden">
+
+  <div id="anl-err" class="alert alert-err hidden"></div>
+
+  <div class="card" style="padding:14px 22px">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#1565C0">Analisa Material — Data Historical</div>
+        <div id="anl-info" style="font-size:12px;color:#666;margin-top:3px">Pilih periode lalu klik Tampilkan</div>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap">
+        <div>
+          <span class="lbl">Dari</span>
+          <input type="date" id="anl-from">
+        </div>
+        <div>
+          <span class="lbl">Sampai</span>
+          <input type="date" id="anl-to">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadAnalyze(true)">&#9654; Tampilkan</button>
+        <input type="text" id="anl-search" placeholder="Cari material / deskripsi..."
+               oninput="renderAnalyzeTable()" style="min-width:200px">
+      </div>
+    </div>
+  </div>
+
+  <div class="sum-grid hidden" id="anl-sum-grid" style="grid-template-columns:repeat(3,1fr)">
+    <div class="sum-card c-all" id="anl-sc-all" onclick="filterAnalyze('')" style="cursor:pointer">
+      <div class="cnt" id="anl-s-total">0</div><div class="slbl">Total Material</div>
+    </div>
+    <div class="sum-card c-match" id="anl-sc-match" onclick="filterAnalyze('match')" style="cursor:pointer">
+      <div class="cnt" id="anl-s-match">0</div><div class="slbl">Selalu Match</div>
+    </div>
+    <div class="sum-card c-sap" id="anl-sc-prob" onclick="filterAnalyze('prob')" style="cursor:pointer">
+      <div class="cnt" id="anl-s-prob">0</div><div class="slbl">Ada Masalah</div>
+    </div>
+  </div>
+
+  <div id="anl-spin" class="hidden" style="text-align:center;padding:50px 0">
+    <div class="spin" style="width:36px;height:36px;margin:0 auto 10px"></div>
+    <div style="color:#888;font-size:13px">Memproses data historical...</div>
+  </div>
+
+  <div id="anl-table-wrap" class="card hidden" style="padding:0">
+    <div style="overflow:auto;max-height:calc(100vh - 260px)">
+    <table>
+      <thead>
+        <tr id="anl-thead">
+          <th onclick="sortAnalyzeBy('matnr')" class="sort-th" data-col="matnr">Material <span class="sort-ico"></span></th>
+          <th style="min-width:160px">Deskripsi</th>
+          <th onclick="sortAnalyzeBy('total')" class="sort-th num" data-col="total">Total <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('cnt_match')" class="sort-th num" data-col="cnt_match">MATCH <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('cnt_sap')" class="sort-th num" data-col="cnt_sap">SAP &gt; Prd <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('cnt_prd')" class="sort-th num" data-col="cnt_prd">Prd &gt; SAP <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('cnt_only_sap')" class="sort-th num" data-col="cnt_only_sap">Hanya SAP <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('cnt_only_prd')" class="sort-th num" data-col="cnt_only_prd">Hanya Prd <span class="sort-ico"></span></th>
+          <th onclick="sortAnalyzeBy('pct_match')" class="sort-th num" data-col="pct_match">% Match <span class="sort-ico"></span></th>
+        </tr>
+      </thead>
+      <tbody id="anl-tbody"></tbody>
+    </table>
+    </div>
+  </div>
+
+</div><!-- /page-analisa -->
+
 </main>
+
+<!-- ── Analisa detail modal ── -->
+<div id="anl-modal" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:center;justify-content:center" onclick="if(event.target===this)closeAnlModal()">
+  <div style="background:#fff;border-radius:10px;padding:24px 28px;min-width:300px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.3);position:relative">
+    <button onclick="closeAnlModal()" style="position:absolute;top:12px;right:14px;border:none;background:none;font-size:18px;cursor:pointer;color:#888;line-height:1">✕</button>
+    <div id="anl-modal-title" style="font-size:14px;font-weight:700;color:#1565C0;margin-bottom:3px;padding-right:24px"></div>
+    <div id="anl-modal-sub" style="font-size:12px;color:#666;margin-bottom:14px;border-bottom:1px solid #eee;padding-bottom:12px"></div>
+    <div id="anl-modal-body" style="font-size:13px;line-height:2;max-height:320px;overflow-y:auto"></div>
+  </div>
+</div>
 
 <script>
 // ── State ──────────────────────────────────────────────────────────────────────
 let allData = [], filteredData = [], displayRows = [], page = 1, activeStatus = '';
 const PER = 200;
 const files = {};   // { aufm: File, caufv: File, makt: File, prodsys: File }
+let analyzeData = [], analyzeSortCol = 'non_match', analyzeSortAsc = false, analyzeLoaded = false, activeAnlFilter = '';
 
 // ── Tab navigation ─────────────────────────────────────────────────────────────
 function switchTab(tab) {
   document.getElementById('page-compare').classList.toggle('hidden', tab !== 'compare');
   document.getElementById('page-upload').classList.toggle('hidden', tab !== 'upload');
+  document.getElementById('page-analisa').classList.toggle('hidden', tab !== 'analisa');
   document.getElementById('tab-compare').classList.toggle('active', tab === 'compare');
   document.getElementById('tab-upload').classList.toggle('active', tab === 'upload');
+  document.getElementById('tab-analisa').classList.toggle('active', tab === 'analisa');
   if (tab === 'upload') loadUploadStatus();
+  if (tab === 'analisa') loadAnalyze();
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   refreshDates();
   setupDrag('aufm'); setupDrag('caufv'); setupDrag('makt'); setupDrag('prodsys');
-  document.getElementById('auto-date').value = new Date().toISOString().slice(0, 10);
+  const _today = new Date().toISOString().slice(0, 10);
+  const _from30 = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0, 10);
+  document.getElementById('auto-date').value = _today;
+  document.getElementById('anl-from').value = _from30;
+  document.getElementById('anl-to').value   = _today;
 });
 
 // ── Date list ──────────────────────────────────────────────────────────────────
@@ -848,6 +946,141 @@ function clearInfo()   { document.getElementById('cmp-info').classList.add('hidd
 function showUploadErr(msg){ const e=document.getElementById('up-err'); e.textContent=msg; e.classList.remove('hidden'); document.getElementById('up-ok').classList.add('hidden'); }
 function showUploadOk(msg) { const e=document.getElementById('up-ok');  e.textContent=msg; e.classList.remove('hidden'); document.getElementById('up-err').classList.add('hidden'); }
 function clearUploadMsg()  { document.getElementById('up-err').classList.add('hidden'); document.getElementById('up-ok').classList.add('hidden'); }
+
+// ── Analisa ────────────────────────────────────────────────────────────────────
+async function loadAnalyze(force = false) {
+  if (!force && analyzeLoaded) return;
+  // reset card filter saat reload
+  activeAnlFilter = '';
+  ['all','match','prob'].forEach(t => {
+    const el = document.getElementById('anl-sc-' + t);
+    if (el) el.classList.remove('active-filter');
+  });
+  document.getElementById('anl-spin').classList.remove('hidden');
+  document.getElementById('anl-table-wrap').classList.add('hidden');
+  document.getElementById('anl-sum-grid').classList.add('hidden');
+  document.getElementById('anl-err').classList.add('hidden');
+  try {
+    const fromVal = document.getElementById('anl-from')?.value || '';
+    const toVal   = document.getElementById('anl-to')?.value   || '';
+    const params  = new URLSearchParams();
+    if (fromVal) params.set('from', fromVal);
+    if (toVal)   params.set('to',   toVal);
+    const res = await fetch('/api/analyze?' + params.toString());
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    analyzeData = d.rows || [];
+    analyzeLoaded = true;
+    const infoEl = document.getElementById('anl-info');
+    if (d.dates_analyzed > 0) {
+      infoEl.textContent = `${d.dates_analyzed} tanggal dianalisa · Periode: ${d.date_min} s/d ${d.date_max}`;
+    } else {
+      infoEl.textContent = 'Tidak ada data pada periode yang dipilih.';
+    }
+    const always = analyzeData.filter(r => r.non_match === 0).length;
+    document.getElementById('anl-s-total').textContent = analyzeData.length;
+    document.getElementById('anl-s-match').textContent = always;
+    document.getElementById('anl-s-prob').textContent = analyzeData.length - always;
+    if (analyzeData.length > 0) document.getElementById('anl-sum-grid').classList.remove('hidden');
+    renderAnalyzeTable();
+  } catch(e) {
+    const el = document.getElementById('anl-err');
+    el.textContent = 'Error memuat analisa: ' + e.message;
+    el.classList.remove('hidden');
+  } finally {
+    document.getElementById('anl-spin').classList.add('hidden');
+  }
+}
+
+function filterAnalyze(type) {
+  activeAnlFilter = activeAnlFilter === type ? '' : type;
+  ['all','match','prob'].forEach(t => {
+    const el = document.getElementById('anl-sc-' + t);
+    if (el) el.classList.toggle('active-filter', activeAnlFilter === t);
+  });
+  renderAnalyzeTable();
+}
+
+function renderAnalyzeTable() {
+  const q = (document.getElementById('anl-search')?.value || '').toLowerCase();
+  let rows = analyzeData.filter(r => {
+    if (activeAnlFilter === 'match' && r.non_match !== 0) return false;
+    if (activeAnlFilter === 'prob'  && r.non_match === 0) return false;
+    return !q || r.matnr.toLowerCase().includes(q) || (r.maktx || '').toLowerCase().includes(q);
+  });
+  rows.sort((a, b) => {
+    let va = a[analyzeSortCol], vb = b[analyzeSortCol];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (va < vb) return analyzeSortAsc ? -1 : 1;
+    if (va > vb) return analyzeSortAsc ? 1 : -1;
+    return 0;
+  });
+  document.querySelectorAll('#anl-thead .sort-th').forEach(th => {
+    const ico = th.querySelector('.sort-ico');
+    ico.textContent = th.dataset.col === analyzeSortCol ? (analyzeSortAsc ? ' ▲' : ' ▼') : '';
+  });
+  const dash = '<span class="anl-dash">—</span>';
+  const fmtCnt = (v, color, statusKey, matnr) => {
+    if (v === 0) return dash;
+    const safe = matnr.replace(/'/g, "\\'");
+    return `<strong style="color:${color};cursor:pointer;text-decoration:underline dotted" data-matnr="${matnr}" data-status="${statusKey}" onclick="showAnlDetail(this)">${v}</strong>`;
+  };
+  const tbody = document.getElementById('anl-tbody');
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:#999">${analyzeData.length ? 'Tidak ada material yang sesuai filter/pencarian' : 'Belum ada data'}</td></tr>`;
+    document.getElementById('anl-table-wrap').classList.remove('hidden');
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const cls = r.pct_match === 100 ? 'anl-row-ok' : (r.pct_match <= 50 && r.total >= 3 ? 'anl-row-bad' : '');
+    const pctStr = r.pct_match === 100
+      ? '<strong style="color:#2E7D32">100%</strong>'
+      : `${r.pct_match}%`;
+    return `<tr class="${cls}">
+      <td><span class="badge" style="background:#E3F2FD;color:#0D47A1;font-size:12px">${r.matnr}</span></td>
+      <td style="color:#555;white-space:normal;max-width:200px">${r.maktx || dash}</td>
+      <td class="num">${r.total}</td>
+      <td class="num">${fmtCnt(r.cnt_match,'#2E7D32','MATCH',r.matnr)}</td>
+      <td class="num">${fmtCnt(r.cnt_sap,'#C62828','SAP LEBIH BESAR',r.matnr)}</td>
+      <td class="num">${fmtCnt(r.cnt_prd,'#E65100','PRODSYS LEBIH BESAR',r.matnr)}</td>
+      <td class="num">${fmtCnt(r.cnt_only_sap,'#880E4F','HANYA DI SAP',r.matnr)}</td>
+      <td class="num">${fmtCnt(r.cnt_only_prd,'#795548','HANYA DI PRODSYS',r.matnr)}</td>
+      <td class="num">${pctStr}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('anl-table-wrap').classList.remove('hidden');
+}
+
+function sortAnalyzeBy(col) {
+  analyzeSortAsc = analyzeSortCol === col ? !analyzeSortAsc : false;
+  analyzeSortCol = col;
+  renderAnalyzeTable();
+}
+
+const _anlStatusLabel = {
+  'MATCH': 'MATCH', 'SAP LEBIH BESAR': 'SAP > Prodsys',
+  'PRODSYS LEBIH BESAR': 'Prodsys > SAP',
+  'HANYA DI SAP': 'Hanya di SAP', 'HANYA DI PRODSYS': 'Hanya di Prodsys',
+};
+
+function showAnlDetail(el) {
+  const matnr = el.dataset.matnr;
+  const statusKey = el.dataset.status;
+  const row = analyzeData.find(r => r.matnr === matnr);
+  if (!row) return;
+  const dates = (row.detail && row.detail[statusKey]) || [];
+  document.getElementById('anl-modal-title').textContent = matnr + (row.maktx ? ' — ' + row.maktx : '');
+  document.getElementById('anl-modal-sub').textContent =
+    `Status: ${_anlStatusLabel[statusKey] || statusKey} · ${dates.length} data`;
+  document.getElementById('anl-modal-body').innerHTML = dates.length
+    ? [...new Set(dates)].sort().map(d => `<div>• ${d}</div>`).join('')
+    : '<div style="color:#999">Tidak ada data</div>';
+  document.getElementById('anl-modal').classList.remove('hidden');
+}
+
+function closeAnlModal() {
+  document.getElementById('anl-modal').classList.add('hidden');
+}
 </script>
 
 </body>
