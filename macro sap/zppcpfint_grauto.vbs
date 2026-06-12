@@ -31,8 +31,8 @@ Else
     tanggalDari   = Format(Now(), "YYYY-MM-DD")
     tanggalSampai = tanggalDari
 End If
-session.findById("wnd[0]/usr/txtI5-LOW").text = tanggalDari
-session.findById("wnd[0]/usr/txtI5-HIGH").text = tanggalSampai
+session.findById("wnd[0]/usr/txtI5-LOW").text = tanggalDari & "*"
+session.findById("wnd[0]/usr/txtI5-HIGH").text = tanggalSampai & "*"
 session.findById("wnd[0]/usr/txtI5-LOW").setFocus
 session.findById("wnd[0]/usr/txtI5-LOW").caretPosition = 10
 session.findById("wnd[0]/tbar[1]/btn[8]").press
