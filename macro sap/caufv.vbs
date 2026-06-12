@@ -20,14 +20,20 @@ session.findById("wnd[0]").sendVKey 0
 session.findById("wnd[0]/tbar[1]/btn[17]").press
 session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell").selectedRows = "0"
 session.findById("wnd[1]/usr/cntlALV_CONTAINER_1/shellcont/shell").doubleClickCurrentCell
-Dim tanggal
-If WScript.Arguments.Count > 0 Then
-    tanggal = WScript.Arguments(0)
+Dim tanggalDari, tanggalSampai
+If WScript.Arguments.Count >= 2 Then
+    tanggalDari   = WScript.Arguments(0)
+    tanggalSampai = WScript.Arguments(1)
+ElseIf WScript.Arguments.Count = 1 Then
+    tanggalDari   = WScript.Arguments(0)
+    tanggalSampai = WScript.Arguments(0)
 Else
-    tanggal = Format(Now(), "DD.MM.YYYY")
+    tanggalDari   = Format(Now(), "DD.MM.YYYY")
+    tanggalSampai = tanggalDari
 End If
 session.findById("wnd[0]/usr/ctxtI2-LOW").text = "FCH*"
-session.findById("wnd[0]/usr/ctxtI8-LOW").text = tanggal
+session.findById("wnd[0]/usr/ctxtI8-LOW").text = tanggalDari
+session.findById("wnd[0]/usr/ctxtI8-HIGH").text = tanggalSampai
 session.findById("wnd[0]/usr/ctxtI8-LOW").setFocus
 session.findById("wnd[0]/usr/ctxtI8-LOW").caretPosition = 2
 session.findById("wnd[0]/tbar[1]/btn[8]").press

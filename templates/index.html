@@ -312,8 +312,12 @@ tbody tr:hover{filter:brightness(.97)}
     <p class="macro-desc">Download otomatis dari SAP (CAUFV → AUFM → ZPPCPFINT_GRAUTO) lalu upload ke dashboard.</p>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <div class="field">
-        <span class="lbl">Tanggal Download</span>
-        <input type="date" id="auto-date" style="padding:5px 9px;border:1px solid #ccc;border-radius:4px;font-size:13px;cursor:pointer">
+        <span class="lbl">Dari Tanggal</span>
+        <input type="date" id="auto-date-from" style="padding:5px 9px;border:1px solid #ccc;border-radius:4px;font-size:13px;cursor:pointer">
+      </div>
+      <div class="field">
+        <span class="lbl">Sampai Tanggal</span>
+        <input type="date" id="auto-date-to" style="padding:5px 9px;border:1px solid #ccc;border-radius:4px;font-size:13px;cursor:pointer">
       </div>
       <button class="btn btn-primary btn-sm" id="btn-auto" onclick="runAutomation()" style="align-self:flex-end">▶ Jalankan Automasi</button>
     </div>
@@ -552,7 +556,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupDrag('aufm'); setupDrag('caufv'); setupDrag('makt'); setupDrag('prodsys');
   const _today = new Date().toISOString().slice(0, 10);
   const _from30 = new Date(Date.now() - 30*24*60*60*1000).toISOString().slice(0, 10);
-  document.getElementById('auto-date').value = _today;
+  document.getElementById('auto-date-from').value = _today;
+  document.getElementById('auto-date-to').value   = _today;
   document.getElementById('anl-from').value = _from30;
   document.getElementById('anl-to').value   = _today;
 });
@@ -871,14 +876,17 @@ async function runAutomation() {
   document.getElementById('auto-err').classList.add('hidden');
   document.getElementById('auto-running').classList.remove('hidden');
 
-  const date = document.getElementById('auto-date').value;
-  if (!date) { _autoShowErr('Pilih tanggal terlebih dahulu'); btn.disabled = false; return; }
+  const dateFrom = document.getElementById('auto-date-from').value;
+  const dateTo   = document.getElementById('auto-date-to').value;
+  if (!dateFrom) { _autoShowErr('Pilih tanggal mulai terlebih dahulu'); btn.disabled = false; return; }
+  if (!dateTo)   { _autoShowErr('Pilih tanggal akhir terlebih dahulu'); btn.disabled = false; return; }
+  if (dateFrom > dateTo) { _autoShowErr('Tanggal mulai tidak boleh lebih besar dari tanggal akhir'); btn.disabled = false; return; }
 
   try {
     const res = await fetch('/api/automation/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date })
+      body: JSON.stringify({ date_from: dateFrom, date_to: dateTo })
     });
     const d = await res.json();
     if (!d.ok) {

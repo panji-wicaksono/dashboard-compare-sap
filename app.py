@@ -425,10 +425,11 @@ def _read_env(key):
     return ""
 
 
-def _run_automation(date_dmy, date_iso):
+def _run_automation(from_dmy, to_dmy, from_iso, to_iso):
     macro_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "macro sap")
     data_dir  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data upload")
     sap_user  = _read_env("SAP_USER")
+    range_label = from_dmy if from_dmy == to_dmy else f"{from_dmy} s/d {to_dmy}"
 
     def log(msg):
         _auto["log"].append(msg)
@@ -456,10 +457,10 @@ def _run_automation(date_dmy, date_iso):
             if r.returncode != 0:
                 raise RuntimeError(f"Macro {script_name} gagal (exit code {r.returncode})")
 
-        # 1. Download CAUFV
-        run_macro("caufv.vbs", [date_dmy],
-                  f"CAUFV tidak ada data untuk tanggal {date_dmy}. Periksa filter tanggal di SAP.")
-        log(f"CAUFV didownload ({date_dmy})")
+        # 1. Download CAUFV (range dari - sampai)
+        run_macro("caufv.vbs", [from_dmy, to_dmy],
+                  f"CAUFV tidak ada data untuk periode {range_label}. Periksa filter tanggal di SAP.")
+        log(f"CAUFV didownload ({range_label})")
 
         # 2. Baca AUFNR dari caufv.xls → salin ke clipboard
         df_c = read_sap_file(_RawFile(os.path.join(data_dir, "caufv.xls")))
@@ -473,23 +474,27 @@ def _run_automation(date_dmy, date_iso):
                   "AUFM tidak ada data untuk order yang dipilih dari CAUFV.")
         log("AUFM didownload dari SAP")
 
-        # 4. Download ZPPCPFINT_GRAUTO
-        run_macro("zppcpfint_grauto.vbs", [date_iso + "*"],
-                  f"Prodsys (ZPPCPFINT_GRAUTO) tidak ada data untuk tanggal {date_iso}.")
-        log(f"ZPPCPFINT_GRAUTO didownload ({date_iso})")
+        # 4. Download ZPPCPFINT_GRAUTO (range dari - sampai)
+        run_macro("zppcpfint_grauto.vbs", [from_iso, to_iso],
+                  f"Prodsys (ZPPCPFINT_GRAUTO) tidak ada data untuk periode {range_label}.")
+        log(f"ZPPCPFINT_GRAUTO didownload ({range_label})")
 
-        # 5. Hapus data lama untuk tanggal ini, lalu insert fresh
+        # 5. Hapus data lama untuk range ini, lalu insert fresh
         with get_db() as conn:
-            # CAUFV: hapus by GSTRP
-            del_c = conn.execute("DELETE FROM caufv WHERE GSTRP = ?", (date_iso,)).rowcount
+            # CAUFV: hapus by GSTRP dalam range
+            del_c = conn.execute(
+                "DELETE FROM caufv WHERE GSTRP >= ? AND GSTRP <= ?", (from_iso, to_iso)
+            ).rowcount
             # AUFM: hapus by AUFNR (chunked agar tidak lewati batas parameter SQLite)
             del_a = 0
             chunk = 500
             for i in range(0, len(aufnr_list), chunk):
                 ph = ",".join(["?"] * len(aufnr_list[i:i+chunk]))
                 del_a += conn.execute(f"DELETE FROM aufm WHERE AUFNR IN ({ph})", aufnr_list[i:i+chunk]).rowcount
-            # PRODSYS: hapus by GSTRP
-            del_p = conn.execute("DELETE FROM prodsys WHERE GSTRP = ?", (date_iso,)).rowcount
+            # PRODSYS: hapus by GSTRP dalam range
+            del_p = conn.execute(
+                "DELETE FROM prodsys WHERE GSTRP >= ? AND GSTRP <= ?", (from_iso, to_iso)
+            ).rowcount
             conn.commit()
         log(f"Data lama dihapus — CAUFV: {del_c}, AUFM: {del_a}, Prodsys: {del_p} baris")
 
@@ -515,22 +520,38 @@ def automation_run():
     if _auto["running"]:
         return jsonify({"error": "Automasi sedang berjalan"}), 409
 
-    data     = request.get_json(silent=True) or {}
-    date_str = data.get("date", "").strip()
+    data      = request.get_json(silent=True) or {}
+    from_str  = data.get("date_from", "").strip()
+    to_str    = data.get("date_to",   "").strip()
 
-    if date_str:
+    # Fallback: dukung parameter lama "date" sebagai single-date
+    if not from_str and not to_str:
+        single = data.get("date", "").strip()
+        from_str = to_str = single
+
+    def _parse(s):
         try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            return datetime.strptime(s, "%Y-%m-%d")
         except ValueError:
-            return jsonify({"error": "Format tanggal tidak valid. Gunakan YYYY-MM-DD"}), 400
-    else:
-        dt = datetime.now()
+            return None
 
-    date_dmy = dt.strftime("%d.%m.%Y")
-    date_iso = dt.strftime("%Y-%m-%d")
+    dt_from = _parse(from_str) if from_str else datetime.now()
+    dt_to   = _parse(to_str)   if to_str   else dt_from
+
+    if dt_from is None:
+        return jsonify({"error": "Format tanggal_dari tidak valid. Gunakan YYYY-MM-DD"}), 400
+    if dt_to is None:
+        return jsonify({"error": "Format tanggal_sampai tidak valid. Gunakan YYYY-MM-DD"}), 400
+    if dt_from > dt_to:
+        return jsonify({"error": "Tanggal mulai tidak boleh lebih besar dari tanggal akhir"}), 400
 
     _auto.update({"running": True, "log": [], "error": None, "done": False})
-    threading.Thread(target=_run_automation, args=(date_dmy, date_iso), daemon=True).start()
+    threading.Thread(
+        target=_run_automation,
+        args=(dt_from.strftime("%d.%m.%Y"), dt_to.strftime("%d.%m.%Y"),
+              dt_from.strftime("%Y-%m-%d"), dt_to.strftime("%Y-%m-%d")),
+        daemon=True,
+    ).start()
     return jsonify({"ok": True})
 
 
